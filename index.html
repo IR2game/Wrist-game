@@ -1,0 +1,942 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#ffffff">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<title>손목 회전 게임</title>
+<style>
+/* ── 디자인 토큰: 재활 치료실 태블릿용. 흰 바탕, 큰 글씨, 기존 PC 게임과 같은 색 체계 ── */
+:root{
+  --bg:#ffffff; --fg:#111111; --muted:#6b6b6b; --line:#dcdcdc;
+  --panel:#f4f4f2;
+  --label-bg:#000000; --label-fg:#ffffff;
+  --box:#1f4e79; --box-done:#2e7d32; --box-over:#c62828;
+  --accent:#9ACD32; --accent-press:#B5E550;
+  --warn:#C0392B; --ok:#2e7d32;
+  --btn:#e9e9e9; --btn-press:#d4d4d4;
+  --font: "Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+  color-scheme: light;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--fg);font-family:var(--font);font-size:18px;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+input,textarea{user-select:text;-webkit-user-select:text}
+button{font-family:inherit;font-size:22px;padding:12px 22px;border:1px solid #bbb;border-radius:10px;background:var(--btn);color:var(--fg);cursor:pointer;line-height:1.25}
+button:active{background:var(--btn-press)}
+button:disabled{opacity:.45;cursor:default}
+button.accent{background:var(--accent);border-color:#7fb020}
+button.accent:active{background:var(--accent-press)}
+button.primary{background:#1f4e79;color:#fff;border-color:#163a5c}
+button.danger{background:#c62828;color:#fff;border-color:#8e1b1b}
+button:focus-visible{outline:3px solid #1f4e79;outline-offset:2px}
+.screen{position:absolute;inset:0;display:none;flex-direction:column;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:max(10px,env(safe-area-inset-top,0px)) max(10px,env(safe-area-inset-bottom,0px))}
+.screen.active{display:flex}
+.title-pill{display:inline-block;background:var(--label-bg);color:var(--label-fg);border-radius:14px;padding:12px 28px;font-size:28px;font-weight:700}
+.center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;flex:1;min-height:0}
+.row{display:flex;gap:16px;align-items:center;flex-wrap:wrap;justify-content:center}
+.hint{color:var(--muted);font-size:17px;text-align:center;line-height:1.5}
+.status{color:var(--warn);font-size:22px;text-align:center;min-height:1.4em}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;background:var(--panel);font-size:16px;border:1px solid var(--line)}
+.pill .dot{width:12px;height:12px;border-radius:50%;background:#bbb}
+.pill.on .dot{background:var(--ok)}
+.pill.off .dot{background:var(--warn)}
+
+/* 연결 화면 */
+.cards{display:flex;gap:24px;justify-content:center;flex-wrap:wrap}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 24px;min-width:300px;max-width:420px;flex:1 1 300px;display:flex;flex-direction:column;gap:12px}
+.card h3{margin:0;font-size:26px}
+.card .dev{font-size:16px;color:var(--muted);min-height:1.3em;word-break:break-all}
+.card .ypr{font-variant-numeric:tabular-nums;font-size:16px;color:var(--muted);min-height:1.3em}
+.card .conn{font-size:20px;font-weight:700}
+.card .conn.on{color:var(--ok)} .card .conn.off{color:var(--warn)}
+
+/* 이름 화면 */
+input.name{font-size:26px;padding:12px 16px;width:min(520px,90vw);border:2px solid #999;border-radius:10px;text-align:center}
+
+/* 선택 화면 */
+.sel-grid{display:grid;grid-template-columns:auto 1fr;gap:14px 28px;align-items:center;max-width:760px;width:100%}
+.sel-grid img{height:min(150px,18vh);width:auto;justify-self:center}
+.sel-grid button{width:100%;font-size:22px;padding:16px 10px;line-height:1.35}
+
+/* 게임 화면 */
+#game-area{position:relative;flex:1;min-height:0;overflow:hidden}
+.hand-img{position:absolute;transform-origin:0 0;will-change:transform;pointer-events:none}
+.cuff{position:absolute;border-radius:50%;pointer-events:none}
+.anglelabel{position:absolute;transform:translate(-50%,-50%);background:var(--label-bg);color:var(--label-fg);border-radius:14px;padding:10px 20px;font-size:21px;white-space:nowrap;z-index:5}
+.countbox{position:absolute;transform:translate(-50%,-50%);background:var(--box);color:#fff;border-radius:14px;padding:12px 22px;font-size:24px;line-height:1.3;text-align:center;white-space:nowrap;z-index:5;font-variant-numeric:tabular-nums}
+.countbox.done{background:var(--box-done)} .countbox.over{background:var(--box-over)}
+#btn-zero{position:absolute;transform:translate(-50%,-50%);z-index:6;background:var(--accent);border-color:#7fb020;font-size:22px;padding:12px 26px}
+.overlay-msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:20;background:var(--warn);color:#fff;border-radius:16px;padding:22px 34px;font-size:30px;text-align:center;line-height:1.45;white-space:pre-line}
+#game-top{display:flex;align-items:center;justify-content:center;gap:16px;padding:6px 0 4px;position:relative;flex-wrap:wrap}
+#game-top .conns{position:absolute;right:0;top:4px;display:flex;gap:8px}
+#game-top button{min-width:200px;font-size:24px}
+
+/* 모달 */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border-radius:16px;padding:22px 26px;max-height:95vh;max-width:96vw;overflow:auto;display:flex;flex-direction:column;gap:14px;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+.modal h2{margin:0;font-size:24px;text-align:center}
+.modal .err{color:var(--warn);min-height:1.3em;text-align:center;font-size:18px}
+table.settings{border-collapse:collapse;font-size:18px}
+table.settings th,table.settings td{padding:4px 8px;text-align:center;vertical-align:middle}
+table.settings th{font-weight:700}
+table.settings img{height:64px;width:64px;object-fit:contain}
+table.settings input{width:86px;font-size:20px;text-align:center;padding:6px;border:1px solid #999;border-radius:8px}
+table.settings td.nm{text-align:left;white-space:nowrap}
+input.big{font-size:30px;width:180px;text-align:center;padding:8px;border:2px solid #999;border-radius:10px}
+
+/* 기록 화면 */
+.rec-list{display:flex;flex-direction:column;gap:10px;overflow:auto;flex:1;min-height:0;padding:4px}
+.rec{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;flex-wrap:wrap}
+.rec .meta{flex:1;min-width:200px}
+.rec .meta b{font-size:20px}
+.rec .meta span{color:var(--muted);font-size:15px;display:block}
+.rec button{font-size:17px;padding:8px 14px}
+
+.toast{position:fixed;left:50%;top:max(84px,calc(env(safe-area-inset-top,0px) + 84px));transform:translateX(-50%);background:#222;color:#fff;padding:14px 22px;border-radius:12px;font-size:19px;z-index:60;display:none;align-items:center;gap:14px;max-width:92vw}
+.toast.show{display:flex}
+.toast button{font-size:17px;padding:8px 14px}
+.unsupported{background:#fff3cd;border:1px solid #e0c060;border-radius:12px;padding:14px 18px;max-width:720px;line-height:1.5;font-size:17px}
+code{background:#eee;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+
+<!-- ───────── 1. 연결 화면 ───────── -->
+<section id="scr-connect" class="screen active">
+  <div class="topbar">
+    <span class="title-pill" id="app-title">손목 회전 게임 · 보드 연결</span>
+    <span class="pill" id="sim-badge" hidden><span class="dot" style="background:#e0a000"></span>시뮬레이션 모드</span>
+  </div>
+  <div class="center">
+    <div id="unsupported" class="unsupported" hidden></div>
+    <div class="cards">
+      <div class="card" data-hand="2">
+        <h3>왼손 보드</h3>
+        <div class="conn off" id="conn-2">연결 안 됨</div>
+        <div class="dev" id="dev-2"></div>
+        <div class="ypr" id="ypr-2"></div>
+        <div class="row">
+          <button class="primary" id="btn-connect-2">연결</button>
+          <button id="btn-disconnect-2" hidden>연결 해제</button>
+        </div>
+        <div class="hint" id="hint-2"></div>
+      </div>
+      <div class="card" data-hand="1">
+        <h3>오른손 보드</h3>
+        <div class="conn off" id="conn-1">연결 안 됨</div>
+        <div class="dev" id="dev-1"></div>
+        <div class="ypr" id="ypr-1"></div>
+        <div class="row">
+          <button class="primary" id="btn-connect-1">연결</button>
+          <button id="btn-disconnect-1" hidden>연결 해제</button>
+        </div>
+        <div class="hint" id="hint-1"></div>
+      </div>
+    </div>
+    <div class="status" id="connect-status"></div>
+    <div class="row">
+      <button class="accent" id="btn-to-name" style="font-size:26px;padding:14px 40px">다음 (이름 입력)</button>
+      <button id="btn-records-0">기록 보기</button>
+    </div>
+    <div class="hint">보드 전원을 켜고 손잡이를 2초간 가만히 둔 뒤(부팅 보정) '연결'을 누르세요.<br>
+      목록에서 <b>WristIMU-L</b>(왼손) / <b>WristIMU-R</b>(오른손)을 고르면 됩니다. 보드가 칩 고유번호로 자기 손을 스스로 알립니다.</div>
+  </div>
+</section>
+
+<!-- ───────── 2. 이름 입력 ───────── -->
+<section id="scr-name" class="screen">
+  <div class="topbar"><span class="title-pill">사용자 이름 입력</span><span id="name-conns" class="row"></span></div>
+  <div class="center">
+    <div class="hint" style="font-size:19px">이름을 입력하고 '확인'을 누르세요.<br>'각도 설정'에서 왼손/오른손 각 운동의 최대/목표 각도를 변경할 수 있습니다.</div>
+    <input class="name" id="inp-name" placeholder="이름" autocomplete="off">
+    <div class="row">
+      <button id="btn-settings">각도 설정</button>
+      <button class="accent" id="btn-name-ok">확인</button>
+    </div>
+    <div class="status" id="name-status"></div>
+    <button id="btn-back-connect" style="font-size:17px">← 보드 연결 화면</button>
+  </div>
+</section>
+
+<!-- ───────── 3. 게임 선택 ───────── -->
+<section id="scr-select" class="screen">
+  <div class="topbar">
+    <span class="title-pill">게임 선택</span>
+    <span class="row" id="select-conns"></span>
+  </div>
+  <div class="center" style="flex-direction:row;gap:40px;align-items:center">
+    <div style="display:flex;flex-direction:column;gap:14px;align-items:center">
+      <button class="accent" id="btn-change-user" style="font-size:24px;padding:16px 28px">사용자 변경</button>
+      <div class="hint" id="select-user"></div>
+      <button id="btn-records-1" style="font-size:18px">기록 보기</button>
+    </div>
+    <div class="sel-grid">
+      <img src="img/FE.png" alt=""><button id="btn-m1">굴곡 (Flexion) /<br>신전 (Extension)</button>
+      <img src="img/PS.png" alt=""><button id="btn-m2">회내 (Pronation) /<br>회외 (Supination)</button>
+      <img src="img/RU.png" alt=""><button id="btn-m3">요측 (Radial) 편위 (Deviation) /<br>천측 (Ulnar) 편위 (Deviation)</button>
+    </div>
+  </div>
+  <div class="status" id="select-status">게임(양손 동시 운동)을 선택하세요.</div>
+</section>
+
+<!-- ───────── 4. 게임 ───────── -->
+<section id="scr-game" class="screen" style="padding-left:0;padding-right:0">
+  <div id="game-top">
+    <button id="btn-start">시작</button>
+    <button id="btn-back">돌아가기</button>
+    <div class="conns">
+      <span class="pill off" id="gconn-2"><span class="dot"></span>왼손</span>
+      <span class="pill off" id="gconn-1"><span class="dot"></span>오른손</span>
+    </div>
+  </div>
+  <div id="game-area"></div>
+</section>
+
+<!-- ───────── 5. 기록 ───────── -->
+<section id="scr-records" class="screen">
+  <div class="topbar">
+    <span class="title-pill">저장된 기록</span>
+    <button id="btn-records-back">닫기</button>
+  </div>
+  <div class="hint" style="margin:8px 0">게임 '시작'~'종료' 구간이 사용자별 엑셀 파일(운동마다 시트 1개)로 저장됩니다. 다운로드하면 태블릿의 '다운로드' 폴더에 들어갑니다.</div>
+  <div class="rec-list" id="rec-list"></div>
+</section>
+
+<!-- ───────── 모달: 각도 설정 ───────── -->
+<div class="modal-bg" id="modal-settings">
+  <div class="modal">
+    <h2 id="settings-title">설정 - 최대/목표 각도</h2>
+    <div class="hint">각 운동의 왼손/오른손 최대각도와 목표각도(°)를 입력하세요.</div>
+    <div style="overflow:auto">
+    <table class="settings" id="settings-table">
+      <thead><tr><th></th><th>운동</th><th>왼손<br>최대각도(°)</th><th>왼손<br>목표각도(°)</th><th>오른손<br>최대각도(°)</th><th>오른손<br>목표각도(°)</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+    <div class="err" id="settings-err"></div>
+    <div class="row"><button class="accent" id="btn-settings-save">저장</button><button id="btn-settings-cancel">취소</button></div>
+  </div>
+</div>
+
+<!-- ───────── 모달: 목표 횟수 ───────── -->
+<div class="modal-bg" id="modal-goal">
+  <div class="modal" style="align-items:center">
+    <h2 id="goal-title">목표 횟수를 입력하세요.</h2>
+    <input class="big" id="inp-goal" inputmode="numeric" pattern="[0-9]*">
+    <div class="err" id="goal-err"></div>
+    <div class="row"><button class="accent" id="btn-goal-ok" style="min-width:140px">확인</button><button id="btn-goal-cancel" style="min-width:140px">취소</button></div>
+  </div>
+</div>
+
+<!-- ───────── 모달: 확인 ───────── -->
+<div class="modal-bg" id="modal-confirm">
+  <div class="modal" style="align-items:center;max-width:520px">
+    <h2 id="confirm-title"></h2>
+    <div class="hint" id="confirm-msg" style="font-size:19px"></div>
+    <div class="row"><button class="danger" id="btn-confirm-ok">확인</button><button id="btn-confirm-cancel">취소</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toast-msg"></span><span id="toast-actions"></span></div>
+
+<script>
+'use strict';
+/* ============================================================================
+   손목 3축 회전 양손 게임 — 태블릿(Web Bluetooth) 버전, 9축 Rev2 보드용
+   PC 파이썬 게임(BSR2_gyro_bigame_claude(1015).py)의 규칙·배치·저장 형식을 옮긴 것.
+   ========================================================================== */
+
+// ───────────── BLE 프로토콜(펌웨어 BSR2_bigame_BLE.ino 와 일치) ─────────────
+const BLE_SVC    = '9f2a0001-5e3b-4c6d-8a1f-0d1c2b3a4f50';
+const BLE_IMU    = '9f2a0002-5e3b-4c6d-8a1f-0d1c2b3a4f50';
+const BLE_CMD    = '9f2a0003-5e3b-4c6d-8a1f-0d1c2b3a4f50';
+const BLE_STATUS = '9f2a0004-5e3b-4c6d-8a1f-0d1c2b3a4f50';
+const BLE_NAME_PREFIX = 'WristIMU';
+
+// ───────────── 조절 가능한 값(기존 코드와 같은 이름) ─────────────
+const STALE_SEC = 0.5;                 // 이보다 오래된 데이터면 '연결 끊김'으로 취급
+const YAW_FREE_MOTIONS = [2, 3];       // yaw를 버리고 계산하는 게임
+const SETTLE_TOL_DEG = 0.3, SETTLE_HOLD_SEC = 0.20, SETTLE_TIMEOUT_SEC = 3.0, SETTLE_POLL_MS = 20;
+// [1007] 1번 게임(9축)은 모드 전환 뒤 방위(yaw)가 천천히 수렴하므로 yaw도 함께 본다.
+//   최근 SETTLE_YAW_WINDOW_SEC 동안 변화가 SETTLE_YAW_TOL_DEG 이내면 수렴(0.2도/초). 최대 60초.
+const SETTLE_YAW_WINDOW_SEC = 1.5, SETTLE_YAW_TOL_DEG = 0.3, SETTLE_TIMEOUT_YAW_SEC = 60.0;
+// [0930] 게임별 보드 융합 모드. 1번(yaw축)은 9축(지자기), 2·3번은 6축. 게임 화면 진입 시 보드로 보낸다.
+const FUSION_MODE_BY_MOTION = { 1:'9', 2:'6', 3:'6' };
+const LOG_RAW_CAP = 1e9;
+const AUTOSAVE_MS = 5000;              // 게임 중 기록을 저장소(IndexedDB)에 내려쓰는 주기
+const REZERO_BUTTON_MOTIONS = [1, 2, 3];
+const DEFAULT_GOAL_COUNT = 10;
+const DEFAULT_CAPS    = { flexion:70, extension:30, pronation:70, supination:70, ulnar:30, radial:30 };
+const DEFAULT_TARGETS = { flexion:30, extension:15, pronation:30, supination:30, ulnar:15, radial:15 };
+
+// 화면 배치(데이터 좌표: x는 -xHalf~+xHalf 고정, y는 화면 비율에 맞춰 0을 중심으로 자동)
+//   xHalf를 키우면 전체 그림이 작아지고 좌우 여유가 생긴다(편위는 팔뚝이 길어 더 넓게).
+const BI_VIEW = { 1:{scale:0.70, dx:7.0, xHalf:12.0}, 2:{scale:0.65, dx:7.0, xHalf:12.0}, 3:{scale:0.70, dx:9.0, xHalf:14.5} };
+let X_HALF = 12.0;
+// 라벨/박스/영점 버튼 위치(데이터 좌표). 기존 figure 좌표를 데이터 좌표로 환산한 값.
+const BI_UI = {
+  1: { label_y:3.3, box_y:-0.9, inner_x:1.9, outer_x:10.8, inner_is:'pos' },
+  2: { label_y:3.3, box_y:-0.9, inner_x:1.9, outer_x:10.8, inner_is:'pos' },
+  3: { label_y:3.3, box_y_pos:-3.0, box_y_neg:0.9, col_x:2.2 },      // 왼손=왼쪽 열(-), 오른손=오른쪽 열(+)
+};
+const HAND2_TARGET_WIDTH = 5.0;
+const LAYOUT = {
+  1: { // 오른손
+    1: { HAND2_CX:0, HAND2_CY:-3.0, IMAGE_DY:-0.8, CUFF_W:2.3, CUFF_H:2.5, CUFF_DX:0.41, CUFF_DY:0.18, CUFF_COLOR:'#bd9173' },
+    2: { HAND2_CX:0, HAND2_CY:-1.0, IMAGE_DY:-0.8 },
+    3: { HAND2_CX:1.5, HAND2_CY:-1.5, IMAGE_DY:-0.4, CUFF_W:3.0, CUFF_H:2.3, CUFF_DX:0.09, CUFF_DY:0.08, CUFF_COLOR:'#bba190' },
+  },
+  2: { // 왼손
+    1: { HAND2_CX:0, HAND2_CY:-3.0, IMAGE_DY:-0.8, CUFF_W:2.3, CUFF_H:2.5, CUFF_DX:-0.38, CUFF_DY:0.18, CUFF_COLOR:'#bd9073' },
+    2: { HAND2_CX:0, HAND2_CY:-1.0, IMAGE_DY:-0.8 },
+    3: { HAND2_CX:-1.5, HAND2_CY:-1.5, IMAGE_DY:-0.4, CUFF_W:3.0, CUFF_H:2.3, CUFF_DX:0.09, CUFF_DY:0.08, CUFF_COLOR:'#bba190' },
+  },
+};
+const IMG = {
+  hand1:'img/hand1.png', hand2:'img/hand2.png', hand1_L:'img/hand1_Lt.png', hand2_L:'img/hand2_Lt.png',
+  pro:'img/Pronation.png', pro_L:'img/Pronation_Lt.png',
+  dev1:'img/deviation1.png', dev2:'img/deviation2.png', dev1_L:'img/deviation1_Lt.png', dev2_L:'img/deviation2_Lt.png',
+};
+const SETTING_FIELDS = [
+  ['flexion','굴곡 (Flexion)','img/Flexion_dir.png'], ['extension','신전 (Extension)','img/Extension_dir.png'],
+  ['pronation','회내 (Pronation)','img/Pronation_dir.png'], ['supination','회외 (Supination)','img/Supination_dir.png'],
+  ['ulnar','천측 편위 (Ulnar)','img/Ulna_dir.png'], ['radial','요측 편위 (Radial)','img/Radial_dir.png'],
+];
+const MOTION_NAMES = { 1:'굴곡 (Flexion) / 신전 (Extension)', 2:'회내 (Pronation) / 회외 (Supination)', 3:'요측 (Radial) / 천측 (Ulnar) 편위' };
+const MOTION_FILE  = { 1:'FlexExt', 2:'ProSup', 3:'Deviation' };
+
+const $ = id => document.getElementById(id);
+const SIM = /[?&]sim=1/.test(location.search);
+
+// ───────────── 수학(쿼터니언) — 기존 코드 그대로 ─────────────
+const d2r = d => d*Math.PI/180, r2d = r => r*180/Math.PI;
+function wrap180(d){ let x = ((d+180)%360+360)%360-180; return x===-180 ? 180 : x; }
+const clamp = (x,lo,hi) => Math.max(lo, Math.min(hi, x));
+function qNorm(q){ const n=Math.hypot(q[0],q[1],q[2],q[3]); return n<1e-12 ? [1,0,0,0] : q.map(v=>v/n); }
+function qConj(q){ return [q[0],-q[1],-q[2],-q[3]]; }
+function qMul(a,b){ const [w1,x1,y1,z1]=a,[w2,x2,y2,z2]=b; return [
+  w1*w2-x1*x2-y1*y2-z1*z2, w1*x2+x1*w2+y1*z2-z1*y2, w1*y2-x1*z2+y1*w2+z1*x2, w1*z2+x1*y2-y1*x2+z1*w2]; }
+function eulerToQuat(yaw,pitch,roll){
+  const cy=Math.cos(d2r(yaw)/2), sy=Math.sin(d2r(yaw)/2), cp=Math.cos(d2r(pitch)/2), sp=Math.sin(d2r(pitch)/2), cr=Math.cos(d2r(roll)/2), sr=Math.sin(d2r(roll)/2);
+  return qNorm([cy*cp*cr+sy*sp*sr, cy*cp*sr-sy*sp*cr, cy*sp*cr+sy*cp*sr, sy*cp*cr-cy*sp*sr]);
+}
+function twistDeg(qStart,qNow,axis){
+  const qRel=qNorm(qMul(qConj(qStart),qNow));
+  const dot=qRel[1]*axis[0]+qRel[2]*axis[1]+qRel[3]*axis[2];
+  const qt=qNorm([qRel[0], axis[0]*dot, axis[1]*dot, axis[2]*dot]);
+  const d2=qt[1]*axis[0]+qt[2]*axis[1]+qt[3]*axis[2];
+  return wrap180(r2d(2*Math.atan2(d2,qt[0])));
+}
+
+// ───────────── 게임 규칙: (rel, capPos, capNeg) → {label, rot, disp} ─────────────
+const R = Math.round;
+const RULES = {
+  1: { // 굴곡/신전
+    1:(rel,fc,ec)=> rel<0 ? (e=>({label:`신전 (Extension) : ${R(e)}°`,rot:-e,disp:-e}))(clamp(-rel,0,ec)) : (f=>({label:`굴곡 (Flexion) : ${R(f)}°`,rot:f,disp:f}))(clamp(rel,0,fc)),
+    2:(rel,fc,ec)=> rel<0 ? (f=>({label:`굴곡 (Flexion) : ${R(f)}°`,rot:-f,disp:f}))(clamp(-rel,0,fc)) : (e=>({label:`신전 (Extension) : ${R(e)}°`,rot:e,disp:-e}))(clamp(rel,0,ec)),
+  },
+  2: { // 회내/회외
+    1:(rel,pc,sc)=> rel<0 ? (s=>({label:`회외 (Supination) : ${R(s)}°`,rot:s,disp:-s}))(clamp(-rel,0,sc)) : (p=>({label:`회내 (Pronation) : ${R(p)}°`,rot:-p,disp:p}))(clamp(rel,0,pc)),
+    2:(rel,pc,sc)=> rel<0 ? (p=>({label:`회내 (Pronation) : ${R(p)}°`,rot:p,disp:p}))(clamp(-rel,0,pc)) : (s=>({label:`회외 (Supination) : ${R(s)}°`,rot:-s,disp:-s}))(clamp(rel,0,sc)),
+  },
+  3: { // 편위
+    1:(rel,uc,rc)=> rel<0 ? (r=>({label:`요측 (Radial)  편위 (Deviation) : ${R(r)}°`,rot:-r,disp:-r}))(clamp(-rel,0,rc)) : (u=>({label:`천측 (Ulnar)  편위 (Deviation) : ${R(u)}°`,rot:u,disp:u}))(clamp(rel,0,uc)),
+    2:(rel,uc,rc)=> rel<0 ? (u=>({label:`천측 (Ulnar)  편위 (Deviation) : ${R(u)}°`,rot:-u,disp:u}))(clamp(-rel,0,uc)) : (r=>({label:`요측 (Radial)  편위 (Deviation) : ${R(r)}°`,rot:r,disp:-r}))(clamp(rel,0,rc)),
+  },
+};
+const defaultLabel = m => m===3 ? '천측 (Ulnar)  편위 (Deviation) : 0°' : m===2 ? '회내 (Pronation) : 0°' : '굴곡 (Flexion) : 0°';
+const targetKeys = m => m===3 ? ['ulnar','radial'] : m===2 ? ['pronation','supination'] : ['flexion','extension'];
+const motionAxis = m => m===3 ? [1,0,0] : m===2 ? [0,1,0] : [0,0,1];
+const posNegNames = m => m===3 ? ['천측 편위 (Ulnar)','요측 편위 (Radial)'] : m===2 ? ['회내 (Pronation)','회외 (Supination)'] : ['굴곡 (Flexion)','신전 (Extension)'];
+const fmtNum = v => Number.isInteger(+v) ? String(+v) : String(+v);
+const safeName = s => (s.replace(/[\\/:*?"<>|]+/g,'_').trim() || 'user');
+const pad = (n,w=2) => String(n).padStart(w,'0');
+function nowStr(ms=true){ const d=new Date(); let s=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; return ms ? s+'.'+pad(d.getMilliseconds(),3) : s; }
+const stamp = () => { const d=new Date(); return `${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; };
+const r1 = (v,nd=1) => (v==null||!isFinite(v)) ? null : +v.toFixed(nd);
+
+// ───────────── 간단 저장(localStorage) ─────────────
+const LS = {
+  get(k,def){ try{ const v=localStorage.getItem(k); return v==null?def:JSON.parse(v);}catch(e){return def;} },
+  set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} },
+};
+
+// ───────────── 보드(BLE) ─────────────
+class Board {
+  constructor(hand){ this.hand=hand; this.label = hand===2?'왼손':'오른손'; this.handChar = hand===2?'L':'R';
+    this.device=null; this.server=null; this.imuChar=null; this.cmdChar=null; this.statusChar=null;
+    this.yaw=0; this.pitch=0; this.roll=0; this.lastT=0; this.seq=-1; this.lost=0; this.boardHand='?';
+    this.wantConnected=false; this.linkUp=false; this.retryTimer=null; this.onSample=null; this.onState=null; }
+  get connected(){ return this.linkUp && (performance.now()-this.lastT)/1000 <= STALE_SEC; }
+  get latest(){ return {yaw:this.yaw, pitch:this.pitch, roll:this.roll, connected:this.connected}; }
+  // 선택창은 반드시 사용자 터치 핸들러 안에서 바로 열어야 한다(await 전에).
+  async pick(){
+    const dev = await navigator.bluetooth.requestDevice({ filters:[{services:[BLE_SVC]},{namePrefix:BLE_NAME_PREFIX}], optionalServices:[BLE_SVC] });
+    await this.attach(dev);
+  }
+  async attach(dev){
+    this.detach(false);
+    this.device = dev; this.wantConnected = true;
+    dev.addEventListener('gattserverdisconnected', ()=>this._onDisc());
+    await this._open();
+    const ids = LS.get('wrist_dev_ids',{}); ids[this.hand]=dev.id; LS.set('wrist_dev_ids',ids);
+  }
+  async _open(){
+    this.server = await this.device.gatt.connect();
+    const svc = await this.server.getPrimaryService(BLE_SVC);
+    this.imuChar = await svc.getCharacteristic(BLE_IMU);
+    this.cmdChar = await svc.getCharacteristic(BLE_CMD);
+    try{ this.statusChar = await svc.getCharacteristic(BLE_STATUS);
+      const v = await this.statusChar.readValue(); this._parseStatus(new TextDecoder().decode(v));
+      this.statusChar.addEventListener('characteristicvaluechanged', e=>this._parseStatus(new TextDecoder().decode(e.target.value)));
+      await this.statusChar.startNotifications().catch(()=>{});
+    }catch(e){ this.statusChar=null; }
+    this.imuChar.addEventListener('characteristicvaluechanged', e=>this._onData(e.target.value));
+    await this.imuChar.startNotifications();
+    this.linkUp = true; this.lastT = 0; this.seq=-1;
+    this._emit();
+  }
+  _parseStatus(s){ const m=/hand=([LR?])/.exec(s); if(m){ this.boardHand=m[1]; }
+    const md=/mode=(\d)/.exec(s); this.mode = md ? +md[1] : 0;
+    const mg=/mag=(\d)/.exec(s); this.magOK = mg ? mg[1]==='1' : false;
+    this.statusText=s; this._emit(); }
+  get modeText(){ return this.mode===9 ? (this.magOK ? '9축(지자기 사용 중)' : '9축(지자기 제외됨)') : this.mode===6 ? '6축' : ''; }
+  _onData(dv){
+    if(dv.byteLength<10) return;
+    this.yaw = dv.getInt16(4,true)/100; this.pitch = dv.getInt16(6,true)/100; this.roll = dv.getInt16(8,true)/100;
+    if(dv.byteLength>=12){ const sq=dv.getUint8(11); if(this.seq>=0){ const gap=(sq-this.seq+256)%256; if(gap>1) this.lost+=gap-1; } this.seq=sq; }
+    this.lastT = performance.now();
+    if(this.onSample) this.onSample(this);
+  }
+  _onDisc(){ this.linkUp=false; this._emit(); if(this.wantConnected) this._scheduleRetry(); }
+  _scheduleRetry(){ clearTimeout(this.retryTimer); this.retryTimer=setTimeout(async()=>{
+      if(!this.wantConnected||!this.device) return;
+      try{ await this._open(); }catch(e){ this._scheduleRetry(); } }, 1500); }
+  async sendCmd(ch){ try{ if(this.cmdChar && this.linkUp) await this.cmdChar.writeValueWithoutResponse(new Uint8Array([ch.charCodeAt(0)])); }catch(e){ try{ await this.cmdChar.writeValue(new Uint8Array([ch.charCodeAt(0)])); }catch(e2){} } }
+  requestCalibration(){ return this.sendCmd('C'); }
+  detach(forget=true){ this.wantConnected=false; clearTimeout(this.retryTimer);
+    try{ if(this.device && this.device.gatt.connected) this.device.gatt.disconnect(); }catch(e){}
+    this.linkUp=false; this.device=null; this.server=null; this.imuChar=null; this.cmdChar=null; this.statusChar=null; this.boardHand='?';
+    if(forget){ const ids=LS.get('wrist_dev_ids',{}); delete ids[this.hand]; LS.set('wrist_dev_ids',ids); }
+    this._emit(); }
+  get name(){ return this.device ? (this.device.name||'(이름 없음)') : ''; }
+  _emit(){ if(this.onState) this.onState(this); }
+}
+
+// 시뮬레이션 보드(하드웨어 없이 화면/규칙/저장 확인용). ?sim=1 로 실행.
+class SimBoard extends Board {
+  constructor(hand){ super(hand); this.t0=performance.now(); this.timer=null; this.simName='WristIMU-'+(hand===2?'L':'R'); this.phase = hand===2 ? 0 : 0.8; }
+  async pick(){ await this.attach({ id:'sim-'+this.hand, name:this.simName, gatt:{connected:true, disconnect:()=>{}, connect:async()=>({})}, addEventListener(){} }); }
+  async _open(){ this.linkUp=true; this.boardHand = this.hand===2?'L':'R'; this.mode=6; this.magOK=false; this._simStatus();
+    clearInterval(this.timer);
+    this.timer=setInterval(()=>{ const t=(performance.now()-this.t0)/1000;
+      const A = 45, w = 2*Math.PI/4; // 4초 주기, ±45°
+      this.yaw = A*Math.sin(w*t+this.phase); this.pitch = 0.8*A*Math.sin(w*t*0.9+this.phase); this.roll = 0.6*A*Math.sin(w*t*1.1+this.phase);
+      this.lastT=performance.now(); if(this.onSample) this.onSample(this); }, 20);
+    this._emit(); }
+  _simStatus(){ this.statusText=`hand=${this.boardHand};mode=${this.mode};mag=${this.magOK?1:0};B=74.6;rate=99.8;bias=1;map=4;ver=sim`; }
+  async sendCmd(ch){ if(ch==='9'){ this.mode=9; this.magOK=true; } else if(ch==='6'){ this.mode=6; this.magOK=false; } this._simStatus(); this._emit(); }
+  detach(forget=true){ clearInterval(this.timer); super.detach(forget); }
+}
+
+// ───────────── 엑셀(.xlsx) 생성 — 외부 라이브러리 없이 ─────────────
+const XLSX = (()=>{
+  const crcTable = (()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320 ^ (c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
+  function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c = crcTable[(c^u8[i])&0xFF] ^ (c>>>8); return (c^0xFFFFFFFF)>>>0; }
+  const enc = new TextEncoder();
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'');
+  function colName(i){ let s=''; i++; while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); } return s; }
+  async function deflateRaw(u8){
+    if(typeof CompressionStream==='undefined') return null;
+    try{ const cs=new CompressionStream('deflate-raw'); const w=cs.writable.getWriter(); w.write(u8); w.close();
+      const ab=await new Response(cs.readable).arrayBuffer(); return new Uint8Array(ab); }catch(e){ return null; }
+  }
+  function dosTime(d){ return ((d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1))&0xFFFF; }
+  function dosDate(d){ return (((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate())&0xFFFF; }
+  async function zip(files){ // files: [{name, data:Uint8Array}]
+    const parts=[], central=[]; let offset=0; const now=new Date();
+    for(const f of files){
+      const nameB=enc.encode(f.name); const crc=crc32(f.data);
+      const comp=await deflateRaw(f.data); const method = comp ? 8 : 0; const payload = comp||f.data;
+      const lh=new DataView(new ArrayBuffer(30));
+      lh.setUint32(0,0x04034b50,true); lh.setUint16(4,20,true); lh.setUint16(6,0x0800,true); lh.setUint16(8,method,true);
+      lh.setUint16(10,dosTime(now),true); lh.setUint16(12,dosDate(now),true); lh.setUint32(14,crc,true);
+      lh.setUint32(18,payload.length,true); lh.setUint32(22,f.data.length,true); lh.setUint16(26,nameB.length,true); lh.setUint16(28,0,true);
+      parts.push(new Uint8Array(lh.buffer), nameB, payload);
+      const ch=new DataView(new ArrayBuffer(46));
+      ch.setUint32(0,0x02014b50,true); ch.setUint16(4,20,true); ch.setUint16(6,20,true); ch.setUint16(8,0x0800,true); ch.setUint16(10,method,true);
+      ch.setUint16(12,dosTime(now),true); ch.setUint16(14,dosDate(now),true); ch.setUint32(16,crc,true);
+      ch.setUint32(20,payload.length,true); ch.setUint32(24,f.data.length,true); ch.setUint16(28,nameB.length,true);
+      ch.setUint16(30,0,true); ch.setUint16(32,0,true); ch.setUint16(34,0,true); ch.setUint16(36,0,true); ch.setUint32(38,0,true); ch.setUint32(42,offset,true);
+      central.push(new Uint8Array(ch.buffer), nameB);
+      offset += 30+nameB.length+payload.length;
+    }
+    const cdSize = central.reduce((a,b)=>a+b.length,0);
+    const eocd=new DataView(new ArrayBuffer(22));
+    eocd.setUint32(0,0x06054b50,true); eocd.setUint16(8,files.length,true); eocd.setUint16(10,files.length,true);
+    eocd.setUint32(12,cdSize,true); eocd.setUint32(16,offset,true);
+    return new Blob([...parts, ...central, new Uint8Array(eocd.buffer)], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  }
+  function sheetXml(rows){ // rows: array of arrays (number|string|null)
+    const out=['<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'];
+    rows.forEach((row,ri)=>{ let s=`<row r="${ri+1}">`;
+      row.forEach((v,ci)=>{ if(v==null||v==='') return; const ref=colName(ci)+(ri+1);
+        if(typeof v==='number' && isFinite(v)) s+=`<c r="${ref}"><v>${v}</v></c>`;
+        else s+=`<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`; });
+      out.push(s+'</row>'); });
+    out.push('</sheetData></worksheet>'); return out.join('');
+  }
+  async function build(sheets){ // sheets: [{title, rows}]
+    const files=[];
+    const names = sheets.map((s,i)=>esc((s.title||('Sheet'+(i+1))).replace(/[\[\]\*\?\/\\:]/g,'_').slice(0,31)));
+    files.push({name:'[Content_Types].xml', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')+'</Types>')});
+    files.push({name:'_rels/.rels', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')});
+    files.push({name:'xl/workbook.xml', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+sheets.map((s,i)=>`<sheet name="${names[i]}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')+'</sheets></workbook>')});
+    files.push({name:'xl/_rels/workbook.xml.rels', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')+`<Relationship Id="rId${sheets.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`)});
+    files.push({name:'xl/styles.xml', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>')});
+    sheets.forEach((s,i)=> files.push({name:`xl/worksheets/sheet${i+1}.xml`, data:enc.encode(sheetXml(s.rows))}));
+    return zip(files);
+  }
+  return { build };
+})();
+
+// ───────────── 기록 저장소(IndexedDB): run(사용자별 파일) → sheet(게임) → chunk(행 묶음) ─────────────
+const DB = (()=>{
+  let dbp=null;
+  function open(){ if(dbp) return dbp; dbp=new Promise((res,rej)=>{ const r=indexedDB.open('wristgame',1);
+    r.onupgradeneeded=()=>{ const d=r.result; d.createObjectStore('runs',{keyPath:'id'}); const c=d.createObjectStore('chunks',{keyPath:'id',autoIncrement:true}); c.createIndex('run','runId'); c.createIndex('sheet',['runId','sheetIdx']); };
+    r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); return dbp; }
+  const tx=(d,st,mode)=>d.transaction(st,mode).objectStore(st);
+  const req=r=>new Promise((res,rej)=>{ r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+  return {
+    async putRun(run){ const d=await open(); return req(tx(d,'runs','readwrite').put(run)); },
+    async getRun(id){ const d=await open(); return req(tx(d,'runs').get(id)); },
+    async listRuns(){ const d=await open(); const all=await req(tx(d,'runs').getAll()); return all.sort((a,b)=>b.startedAt-a.startedAt); },
+    async addChunk(runId,sheetIdx,rows){ const d=await open(); return req(tx(d,'chunks','readwrite').add({runId,sheetIdx,rows,t:Date.now()})); },
+    async sheetRows(runId,sheetIdx){ const d=await open(); const idx=tx(d,'chunks').index('sheet'); const chunks=await req(idx.getAll(IDBKeyRange.only([runId,sheetIdx]))); chunks.sort((a,b)=>a.id-b.id); const out=[]; for(const c of chunks) for(const r of c.rows) out.push(r); return out; },
+    async deleteRun(runId){ const d=await open(); const t=d.transaction(['runs','chunks'],'readwrite'); t.objectStore('runs').delete(runId);
+      const idx=t.objectStore('chunks').index('run'); const keys=await req(idx.getAllKeys(IDBKeyRange.only(runId))); for(const k of keys) t.objectStore('chunks').delete(k);
+      return new Promise((res,rej)=>{ t.oncomplete=res; t.onerror=()=>rej(t.error); }); },
+  };
+})();
+
+// ───────────── 앱 상태 ─────────────
+const app = {
+  boards: {2: SIM? new SimBoard(2) : new Board(2), 1: SIM? new SimBoard(1) : new Board(1)},
+  username:null, allSettings: LS.get('wrist_user_settings',{}),
+  caps:{1:{...DEFAULT_CAPS},2:{...DEFAULT_CAPS}}, targets:{1:{...DEFAULT_TARGETS},2:{...DEFAULT_TARGETS}},
+  goalCount: DEFAULT_GOAL_COUNT,
+  motion:null, started:false, starting:false,
+  startToken:0,           // '시작' 대기 중 화면을 떠나면 번호가 바뀌어 뒤늦은 시작을 막는다
+  hands:{1:newHand(),2:newHand()},
+  run:null,               // {id,user,startedAt,sheets:[{title,headers,nrows,motion}]}
+  log:{active:false, startT:0, rows:[], sheetIdx:-1, headers:null, timer:null, latestDisp:{1:0,2:0}},
+  prevConn:{1:true,2:true}, images:{}, raf:0, wakeLock:null,
+};
+function newHand(){ return { qStart:[1,0,0,0], repPos:0, repNeg:0, armedPos:false, armedNeg:false, overPos:false, overNeg:false,
+  el:{im1:null,im2:null,cuff:null,label:null,boxPos:null,boxNeg:null}, geo:null, lastLabel:'', lastRot:0 }; }
+
+function showScreen(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('active', s.id===id)); }
+let toastTimer=null;
+function toast(msg, actions=[], ms=5000){ $('toast-msg').textContent=msg; const a=$('toast-actions'); a.innerHTML='';
+  actions.forEach(([t,fn])=>{ const b=document.createElement('button'); b.textContent=t; b.onclick=()=>{ fn(); hideToast(); }; a.appendChild(b); });
+  $('toast').classList.add('show'); clearTimeout(toastTimer); if(ms) toastTimer=setTimeout(hideToast, ms); }
+function hideToast(){ $('toast').classList.remove('show'); }
+function confirmBox(title,msg){ return new Promise(res=>{ $('confirm-title').textContent=title; $('confirm-msg').textContent=msg; $('modal-confirm').classList.add('open');
+  $('btn-confirm-ok').onclick=()=>{ $('modal-confirm').classList.remove('open'); res(true); }; $('btn-confirm-cancel').onclick=()=>{ $('modal-confirm').classList.remove('open'); res(false); }; }); }
+
+// ───────────── 연결 화면 ─────────────
+function connPill(el, on, text){ el.classList.toggle('on',on); el.classList.toggle('off',!on); if(text) el.lastChild.textContent=text; }
+function renderBoard(b){
+  const h=b.hand, on=b.connected;
+  const c=$('conn-'+h); c.textContent = b.linkUp ? (on?'연결됨':'연결됨 (데이터 대기 중…)') : (b.device? '끊김 - 재연결 시도 중…' : '연결 안 됨'); c.className='conn '+(on?'on':'off');
+  $('dev-'+h).textContent = b.device ? `${b.name}  ·  보드 판별: ${b.boardHand==='L'?'왼손':b.boardHand==='R'?'오른손':'확인 중'}` + (b.modeText? `  ·  ${b.modeText}`:'') + (b.statusText? `  ·  ${b.statusText.replace(/;/g,'  ')}`:'') : '';
+  $('btn-connect-'+h).textContent = b.device ? '다른 보드 선택' : '연결';
+  $('btn-disconnect-'+h).hidden = !b.device;
+  const hint=$('hint-'+h);
+  // 보드는 칩 고유번호로 자기 손을 스스로 판별한다(스케치 selectBoardOffsets).
+  // 반대쪽 자리에 연결하면 지자기 오프셋이 다른 보드라 각도가 틀어지므로 연결을 끊고 알린다.
+  if(b.linkUp && (b.boardHand==='L'||b.boardHand==='R') && b.boardHand!==b.handChar){
+    const other = b.boardHand==='L' ? '왼손' : '오른손', nm = b.name;   // detach() 전에 이름을 받아 둔다
+    b.detach(); hint.textContent=`${nm} 은(는) ${other} 보드입니다. ${other} 자리의 '연결'에서 선택하세요.`; hint.style.color='var(--warn)';
+    toast(`${other} 보드(${nm})를 ${b.label} 자리에 연결해서 끊었습니다.`, [], 6000);
+  }
+  else if(!b.linkUp && !b.device && !hint.textContent.includes('보드입니다')) { hint.textContent=''; hint.style.color=''; }
+  else if(b.linkUp){ hint.textContent=''; hint.style.color=''; }
+  const modeTag = b.modeText ? ' '+b.modeText.split('(')[0] : '';
+  connPill($('gconn-'+h), on, b.label+modeTag); connPill($('name-conn-'+h)||document.createElement('span'), on); connPill($('select-conn-'+h)||document.createElement('span'), on);
+  $('connect-status').textContent = (app.boards[1].connected && app.boards[2].connected) ? '양손 보드가 모두 연결되었습니다.' : '';
+}
+for(const h of [1,2]){
+  const b=app.boards[h];
+  b.onState=()=>renderBoard(b);
+  $('btn-connect-'+h).addEventListener('click', ()=>{ // 사용자 터치 안에서 바로 requestDevice
+    b.pick().then(()=>renderBoard(b)).catch(e=>{ if(e && e.name!=='NotFoundError') toast(b.label+' 연결 실패: '+(e.message||e), [], 6000); renderBoard(b); });
+  });
+  $('btn-disconnect-'+h).addEventListener('click', ()=>{ b.detach(); renderBoard(b); });
+}
+// 이전에 연결했던 보드 자동 재연결(크롬이 getDevices를 지원할 때만)
+async function tryAutoReconnect(){
+  if(SIM || !navigator.bluetooth || !navigator.bluetooth.getDevices) return;
+  const ids=LS.get('wrist_dev_ids',{}); if(!ids[1]&&!ids[2]) return;
+  let devs=[]; try{ devs=await navigator.bluetooth.getDevices(); }catch(e){ return; }
+  for(const h of [2,1]){ const d=devs.find(x=>x.id===ids[h]); if(!d) continue; const b=app.boards[h];
+    $('hint-'+h).textContent='이전 보드('+(d.name||'')+') 자동 연결 시도 중… (안 되면 "연결"을 누르세요)';
+    (async()=>{ try{
+        await new Promise((res,rej)=>{ const ac=new AbortController(); const t=setTimeout(()=>{ac.abort(); rej(new Error('timeout'));},10000);
+          d.addEventListener('advertisementreceived',()=>{ clearTimeout(t); ac.abort(); res(); },{once:true});
+          d.watchAdvertisements({signal:ac.signal}).catch(rej); });
+        await b.attach(d);
+      }catch(e){ if(!b.device) $('hint-'+h).textContent=''; } renderBoard(b); })();
+  }
+}
+// 1초마다 화면의 자세값/연결 상태 갱신(연결 화면)
+setInterval(()=>{ for(const h of [1,2]){ const b=app.boards[h]; if(b.linkUp){ const l=b.latest; $('ypr-'+h).textContent=`yaw ${l.yaw.toFixed(1)}  pitch ${l.pitch.toFixed(1)}  roll ${l.roll.toFixed(1)}` + (b.lost? `  (누락 ${b.lost})`:''); } else $('ypr-'+h).textContent=''; renderBoard(b); } }, 500);
+
+$('btn-to-name').addEventListener('click', ()=>{ showScreen('scr-name'); $('inp-name').value=app.username||''; setTimeout(()=>$('inp-name').focus(),50); });
+$('btn-back-connect').addEventListener('click', ()=>showScreen('scr-connect'));
+$('btn-records-0').addEventListener('click', openRecords);
+$('btn-records-1').addEventListener('click', openRecords);
+
+// ───────────── 사용자/설정 ─────────────
+function activateUser(name){
+  if(name!==app.username){ stopLogging(); app.run=null; }   // 사용자가 바뀌면 다음 게임부터 새 파일
+  app.username=name;
+  const e=app.allSettings[name]||{};
+  app.caps = e.caps ? {1:{...e.caps[1]},2:{...e.caps[2]}} : {1:{...DEFAULT_CAPS},2:{...DEFAULT_CAPS}};
+  app.targets = e.targets ? {1:{...e.targets[1]},2:{...e.targets[2]}} : {1:{...DEFAULT_TARGETS},2:{...DEFAULT_TARGETS}};
+}
+$('btn-name-ok').addEventListener('click', ()=>{ const n=$('inp-name').value.trim(); if(!n){ $('name-status').textContent='이름을 입력하세요.'; return; } activateUser(n); showSelection(); });
+$('inp-name').addEventListener('keydown', e=>{ if(e.key==='Enter') $('btn-name-ok').click(); });
+$('btn-settings').addEventListener('click', ()=>{ const n=$('inp-name').value.trim(); if(!n){ $('name-status').textContent='이름을 먼저 입력하세요.'; return; } activateUser(n); openSettings(n); });
+function openSettings(name){
+  $('settings-title').textContent=`설정 - 최대/목표 각도 (${name})`;
+  const tb=$('settings-table').querySelector('tbody'); tb.innerHTML='';
+  for(const [key,lab,img] of SETTING_FIELDS){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td><img src="${img}" alt=""></td><td class="nm">${lab}</td>`+
+      [2,1].map(h=>`<td><input id="cap-${h}-${key}" inputmode="decimal" value="${fmtNum(app.caps[h][key])}"></td><td><input id="tgt-${h}-${key}" inputmode="decimal" value="${fmtNum(app.targets[h][key])}"></td>`).join('');
+    tb.appendChild(tr);
+  }
+  $('settings-err').textContent=''; $('modal-settings').classList.add('open');
+  $('btn-settings-save').onclick=()=>{
+    const nc={1:{},2:{}}, nt={1:{},2:{}};
+    for(const [h,hn] of [[2,'왼손'],[1,'오른손']]) for(const [key,lab] of SETTING_FIELDS){
+      const c=parseFloat($(`cap-${h}-${key}`).value), t=parseFloat($(`tgt-${h}-${key}`).value);
+      if(!isFinite(c)||!isFinite(t)){ $('settings-err').textContent=`${hn} '${lab}' 값이 숫자가 아닙니다.`; return; }
+      if(c<=0||t<=0){ $('settings-err').textContent='모든 값은 0보다 커야 합니다.'; return; }
+      if(t>c){ $('settings-err').textContent=`${hn} '${lab}' 목표각도는 최대각도 이하로 입력하세요.`; return; }
+      nc[h][key]=c; nt[h][key]=t; }
+    app.caps=nc; app.targets=nt;
+    const e=app.allSettings[name]=app.allSettings[name]||{}; e.caps={1:{...nc[1]},2:{...nc[2]}}; e.targets={1:{...nt[1]},2:{...nt[2]}};
+    LS.set('wrist_user_settings',app.allSettings);
+    $('modal-settings').classList.remove('open'); $('name-status').textContent=`'${name}' 설정을 저장했습니다.`;
+  };
+  $('btn-settings-cancel').onclick=()=>$('modal-settings').classList.remove('open');
+}
+
+// ───────────── 선택 화면 ─────────────
+function showSelection(){ stopLogging(); stopGameLoop(); app.startToken++; showScreen('scr-select'); $('select-user').textContent=`사용자: ${app.username}`; $('select-status').textContent='게임(양손 동시 운동)을 선택하세요.'; }
+$('btn-change-user').addEventListener('click', ()=>{ showScreen('scr-name'); $('inp-name').value=app.username||''; });
+for(const m of [1,2,3]) $('btn-m'+m).addEventListener('click', ()=>onMotion(m));
+function onMotion(m){
+  const e=app.allSettings[app.username]||{}; app.goalCount=(e.goal_counts&&e.goal_counts[m])||DEFAULT_GOAL_COUNT;
+  showGame(m);
+  // 목표 횟수 팝업(게임 화면 위에)
+  $('goal-title').innerHTML=`[${MOTION_NAMES[m]}]<br>목표 횟수를 입력하세요.`; $('inp-goal').value=app.goalCount; $('goal-err').textContent=''; $('modal-goal').classList.add('open');
+  setTimeout(()=>{ $('inp-goal').focus(); $('inp-goal').select(); },50);
+  $('btn-goal-ok').onclick=()=>{ const v=parseInt($('inp-goal').value,10); if(!isFinite(v)){ $('goal-err').textContent='숫자를 입력하세요.'; return; } if(v<=0){ $('goal-err').textContent='1 이상의 값을 입력하세요.'; return; }
+    app.goalCount=v; const ee=app.allSettings[app.username]=app.allSettings[app.username]||{}; (ee.goal_counts=ee.goal_counts||{})[m]=v; LS.set('wrist_user_settings',app.allSettings);
+    $('modal-goal').classList.remove('open'); refreshCountBoxes(); };
+  $('btn-goal-cancel').onclick=()=>{ $('modal-goal').classList.remove('open'); showSelection(); };
+}
+$('inp-goal').addEventListener('keydown', e=>{ if(e.key==='Enter') $('btn-goal-ok').click(); });
+
+// ───────────── 게임 화면: 배치 ─────────────
+function loadImages(){ const ps=Object.entries(IMG).map(([k,src])=>new Promise(res=>{ const im=new Image(); im.onload=()=>{ app.images[k]=im; res(); }; im.onerror=()=>{ console.warn('이미지 없음',src); app.images[k]=im; res(); }; im.src=src; })); return Promise.all(ps); }
+const extentFromCenter=(cx,cy,w,h)=>[cx-w/2,cx+w/2,cy-h/2,cy+h/2];
+function buildHandGeo(hand, motion, s, dx){
+  const cfg=LAYOUT[hand][motion]; const g={};
+  const {HAND2_CX,HAND2_CY,HAND2_DX=0,HAND2_DY=0,HAND1_DX=0,HAND1_DY=0,JOIN_GAP=0,IMAGE_DY=0}=cfg;
+  const mExt=e=>[e[0]*s+dx,e[1]*s+dx,e[2]*s,e[3]*s];
+  let im1,im2;
+  if(motion===1){ im2=app.images[hand===2?'hand2_L':'hand2']; im1=app.images[hand===2?'hand1_L':'hand1']; }
+  else if(motion===2){ im1=app.images[hand===2?'pro':'pro_L']; im2=null; }   // 거울 모드: 좌우 파일 교차(기존과 동일)
+  else { im2=app.images[hand===2?'dev2_L':'dev2']; im1=app.images[hand===2?'dev1_L':'dev1']; }
+  const w1px=im1.naturalWidth||1, h1px=im1.naturalHeight||1;
+  if(motion===2){
+    const scale=7.0/w1px, w1=w1px*scale, h1=h1px*scale;
+    const cx=(HAND2_CX+HAND2_DX)+HAND1_DX, cy=(HAND2_CY+HAND2_DY)+IMAGE_DY+HAND1_DY;
+    const ext1=mExt(extentFromCenter(cx,cy,w1,h1));
+    g.im1={img:im1,ext:ext1}; g.im2=null; g.cuff=null; g.pivot=[(ext1[0]+ext1[1])/2,(ext1[2]+ext1[3])/2]; g.viewCx=g.pivot[0]; return g;
+  }
+  const w2px=im2.naturalWidth||1, h2px=im2.naturalHeight||1;
+  const scale=HAND2_TARGET_WIDTH/w2px, w2=w2px*scale, h2=h2px*scale, w1=w1px*scale, h1=h1px*scale;
+  const ext2l=extentFromCenter(HAND2_CX+HAND2_DX,(HAND2_CY+HAND2_DY)+IMAGE_DY,w2,h2);
+  let ext1l,pivotl;
+  if(motion===3){ const hcy=(ext2l[2]+ext2l[3])/2;
+    if(hand===2){ const hcx=ext2l[1]+JOIN_GAP+w1/2; ext1l=extentFromCenter(hcx+HAND1_DX,hcy+HAND1_DY,w1,h1); pivotl=[ext1l[0],(ext1l[2]+ext1l[3])/2]; }
+    else { const hcx=ext2l[0]-JOIN_GAP-w1/2; ext1l=extentFromCenter(hcx+HAND1_DX,hcy+HAND1_DY,w1,h1); pivotl=[ext1l[1],(ext1l[2]+ext1l[3])/2]; }
+  } else { const hcy=ext2l[3]+JOIN_GAP+h1/2; ext1l=extentFromCenter(HAND2_CX+HAND1_DX,hcy+HAND1_DY,w1,h1); pivotl=[(ext1l[0]+ext1l[1])/2,ext1l[2]]; }
+  const ext1=mExt(ext1l), ext2=mExt(ext2l);
+  g.im1={img:im1,ext:ext1}; g.im2={img:im2,ext:ext2}; g.pivot=[pivotl[0]*s+dx,pivotl[1]*s];
+  g.viewCx = motion===3 ? (Math.min(ext1[0],ext2[0])+Math.max(ext1[1],ext2[1]))/2 : g.pivot[0];
+  g.cuff={cx:g.pivot[0]+(cfg.CUFF_DX||0.2)*s, cy:g.pivot[1]+(cfg.CUFF_DY||0.18)*s, w:(cfg.CUFF_W||1.4)*s, h:(cfg.CUFF_H||1.1)*s, color:cfg.CUFF_COLOR||'#bd9173'};
+  return g;
+}
+// 데이터 좌표 → 화면 px
+let view={W:0,H:0,ppu:1};
+function updateView(){ const a=$('game-area'); view.W=a.clientWidth; view.H=a.clientHeight; view.ppu=view.W/(2*X_HALF); }
+const px = x => (x+X_HALF)*view.ppu;
+const py = y => view.H/2 - y*view.ppu;
+function placeImg(el,ext){ el.style.left=px(ext[0])+'px'; el.style.top=py(ext[3])+'px'; el.style.width=((ext[1]-ext[0])*view.ppu)+'px'; el.style.height=((ext[3]-ext[2])*view.ppu)+'px'; }
+function placeCenter(el,x,y){ el.style.left=px(x)+'px'; el.style.top=py(y)+'px'; }
+
+function showGame(m){
+  stopLogging(); stopGameLoop();
+  app.motion=m; app.started=false; app.starting=false; app.startToken++;
+  const area=$('game-area'); area.innerHTML='';
+  X_HALF = BI_VIEW[m].xHalf || 12.0;
+  showScreen('scr-game'); updateView();
+  const bi=BI_VIEW[m], ui=BI_UI[m], [posName,negName]=posNegNames(m);
+  for(const hand of [2,1]){
+    const st=app.hands[hand]=newHand(); const side = hand===1 ? 1 : -1;
+    const g=st.geo=buildHandGeo(hand,m,bi.scale,side*bi.dx);
+    if(g.cuff){ const c=document.createElement('div'); c.className='cuff'; c.style.background=g.cuff.color; c.style.zIndex=0; area.appendChild(c); st.el.cuff=c; }
+    if(g.im2){ const e=document.createElement('img'); e.className='hand-img'; e.src=g.im2.img.src; e.style.zIndex=2; area.appendChild(e); st.el.im2=e; }
+    { const e=document.createElement('img'); e.className='hand-img'; e.src=g.im1.img.src; e.style.zIndex=3; area.appendChild(e); st.el.im1=e; }
+    const lab=document.createElement('div'); lab.className='anglelabel'; lab.textContent=`[${hand===2?'왼손':'오른손'}] ${defaultLabel(m)}`; area.appendChild(lab); st.el.label=lab;
+    const bp=document.createElement('div'); bp.className='countbox'; area.appendChild(bp); st.el.boxPos=bp;
+    const bn=document.createElement('div'); bn.className='countbox'; area.appendChild(bn); st.el.boxNeg=bn;
+  }
+  if(REZERO_BUTTON_MOTIONS.includes(m)){ const z=document.createElement('button'); z.id='btn-zero'; z.textContent='영점'; z.addEventListener('click',onRezero); area.appendChild(z); }
+  layoutGame(); refreshCountBoxes(); updateDefaultView();
+  // [0930] 게임에 맞는 융합 모드(1번=9축, 2·3번=6축)를 먼저 지정하고 바이어스 재보정을 요청한다.
+  for(const h of [1,2]){ const b=app.boards[h]; (async()=>{ await b.sendCmd(FUSION_MODE_BY_MOTION[m]||'6'); await b.requestCalibration(); })(); }
+  app.prevConn={1:true,2:true};
+  startGameLoop();
+}
+function layoutGame(){
+  updateView(); const m=app.motion; if(!m) return; const ui=BI_UI[m];
+  for(const hand of [2,1]){ const st=app.hands[hand], g=st.geo; if(!g) continue;
+    placeImg(st.el.im1,g.im1.ext); if(st.el.im2) placeImg(st.el.im2,g.im2.ext);
+    if(st.el.cuff){ const c=g.cuff; st.el.cuff.style.left=px(c.cx-c.w/2)+'px'; st.el.cuff.style.top=py(c.cy+c.h/2)+'px'; st.el.cuff.style.width=(c.w*view.ppu)+'px'; st.el.cuff.style.height=(c.h*view.ppu)+'px'; }
+    // 회전 중심을 이미지 안의 비율로
+    const ox=(g.pivot[0]-g.im1.ext[0])/(g.im1.ext[1]-g.im1.ext[0])*100, oy=(g.im1.ext[3]-g.pivot[1])/(g.im1.ext[3]-g.im1.ext[2])*100;
+    st.el.im1.style.transformOrigin=`${ox}% ${oy}%`;
+    placeCenter(st.el.label,g.viewCx,ui.label_y);
+    if(m===3){ const colx = hand===2 ? -ui.col_x : ui.col_x; placeCenter(st.el.boxPos,colx,ui.box_y_pos); placeCenter(st.el.boxNeg,colx,ui.box_y_neg); }
+    else { const sideSign = g.viewCx<0 ? -1 : 1; const inner=sideSign*ui.inner_x, outer=sideSign*ui.outer_x;
+      const [pxX,nxX] = ui.inner_is==='pos' ? [inner,outer] : [outer,inner]; placeCenter(st.el.boxPos,pxX,ui.box_y); placeCenter(st.el.boxNeg,nxX,ui.box_y); }
+    applyRot(hand, st.lastRot);
+  }
+  const z=$('btn-zero'); if(z){ placeCenter(z,(app.hands[2].geo.viewCx+app.hands[1].geo.viewCx)/2, ui.label_y); }
+}
+window.addEventListener('resize', ()=>{ if($('scr-game').classList.contains('active')) layoutGame(); });
+function applyRot(hand,rot){ const st=app.hands[hand]; st.lastRot=rot; if(st.el.im1) st.el.im1.style.transform=`rotate(${-rot}deg)`; }   // CSS는 시계방향이 +
+function updateDefaultView(){ for(const hand of [2,1]){ applyRot(hand,0); app.hands[hand].el.label.textContent=`[${hand===2?'왼손':'오른손'}] ${defaultLabel(app.motion)}`; } }
+function refreshCountBoxes(){ for(const hand of [2,1]){ const st=app.hands[hand]; if(!st.el.boxPos) continue;
+  for(const [box,n,over] of [[st.el.boxPos,st.repPos,st.overPos],[st.el.boxNeg,st.repNeg,st.overNeg]]){
+    box.innerHTML=`달성 ${n}<br>목표 ${app.goalCount}`; box.classList.toggle('over',!!over); box.classList.toggle('done',!over && n>=app.goalCount); } } }
+
+// ───────────── 게임 진행 ─────────────
+function poseQuat(y,p,r){ if(YAW_FREE_MOTIONS.includes(app.motion)) y=0; return eulerToQuat(y,p,r); }
+function computeHand(hand,b,capPos,capNeg){
+  let rel=twistDeg(app.hands[hand].qStart, poseQuat(b.yaw,b.pitch,b.roll), motionAxis(app.motion));
+  if(app.motion===3 && hand===2) rel=-rel;               // 편위 왼손: 방향 해석 반전
+  const out=RULES[app.motion][hand](rel,capPos,capNeg);
+  const raw=RULES[app.motion][hand](rel,LOG_RAW_CAP,LOG_RAW_CAP).disp;
+  if(app.motion===2) out.rot=-out.rot;                   // 회내/회외 거울 모드: 화면 회전만 반대
+  return {...out, raw};
+}
+function updateCounts(hand,disp){
+  if(!app.started) return; const [pk,nk]=targetKeys(app.motion); const tp=app.targets[hand][pk], tn=app.targets[hand][nk]; const st=app.hands[hand];
+  st.overPos = disp>=tp; st.overNeg = disp<=-tn;
+  if(disp>=tp) st.armedPos=true; if(disp<=-tn) st.armedNeg=true;
+  if(st.armedPos && disp<=0){ st.repPos++; st.armedPos=false; }
+  if(st.armedNeg && disp>=0){ st.repNeg++; st.armedNeg=false; }
+}
+// 보드에서 샘플이 올 때마다: 판정 + 기록(기존 LOG 스레드 역할)
+function onSample(b){
+  if(!app.started || !$('scr-game').classList.contains('active')) return;
+  const hand=b.hand, [pk,nk]=targetKeys(app.motion);
+  const r=computeHand(hand,b,app.caps[hand][pk],app.caps[hand][nk]);
+  updateCounts(hand,r.disp);
+  app.log.latestDisp[hand]=r.disp; app.hands[hand].lastLabel=r.label; app.hands[hand].pendingRot=r.rot;
+  if(app.log.active){
+    const L=app.boards[2], Rb=app.boards[1];
+    const sL = (hand===2) ? r : (L.connected ? computeHand(2,L,app.caps[2][pk],app.caps[2][nk]) : null);
+    const sR = (hand===1) ? r : (Rb.connected ? computeHand(1,Rb,app.caps[1][pk],app.caps[1][nk]) : null);
+    const hl=app.hands[2], hr=app.hands[1];
+    app.log.rows.push([nowStr(true), +((performance.now()-app.log.startT)/1000).toFixed(3),
+      r1(sL?sL.disp:app.log.latestDisp[2]), r1(sR?sR.disp:app.log.latestDisp[1]),
+      r1(sL?sL.raw:null,2), r1(sR?sR.raw:null,2), sL?1:0, sR?1:0, app.goalCount,
+      hl.repPos, hl.repNeg, hr.repPos, hr.repNeg,
+      r1(sL?L.yaw:null,2), r1(sL?L.pitch:null,2), r1(sL?L.roll:null,2),
+      r1(sR?Rb.yaw:null,2), r1(sR?Rb.pitch:null,2), r1(sR?Rb.roll:null,2)]);
+  }
+}
+app.boards[1].onSample=onSample; app.boards[2].onSample=onSample;
+
+function startGameLoop(){ cancelAnimationFrame(app.raf); const step=()=>{ app.raf=requestAnimationFrame(step); gameFrame(); }; app.raf=requestAnimationFrame(step); }
+function stopGameLoop(){ cancelAnimationFrame(app.raf); app.raf=0; releaseWake(); }
+function syncStartButton(cL,cR){ const b=$('btn-start'); b.textContent = (!cL&&!cR)?'연결 안 됨(양손)' : !cL?'연결 안 됨(왼손)' : !cR?'연결 안 됨(오른손)' : (app.started?'종료':'시작'); }
+function gameFrame(){
+  const L=app.boards[2], Rb=app.boards[1], cL=L.connected, cR=Rb.connected;
+  syncStartButton(cL,cR); connPill($('gconn-2'),cL); connPill($('gconn-1'),cR);
+  checkReconnect(cL,cR);
+  if(!app.started) return;
+  for(const [hand,b,c] of [[2,L,cL],[1,Rb,cR]]){ if(!c) continue; const st=app.hands[hand];
+    if(st.pendingRot!==undefined){ applyRot(hand,st.pendingRot); st.el.label.textContent=`[${hand===2?'왼손':'오른손'}] ${st.lastLabel}`; } }
+  refreshCountBoxes();
+}
+function checkReconnect(cL,cR){ const now={2:cL,1:cR}; const back=[];
+  for(const h of [2,1]){ if(now[h] && !app.prevConn[h]) back.push(h===2?'왼손':'오른손'); app.prevConn[h]=now[h]; }
+  if(!back.length||!app.started||YAW_FREE_MOTIONS.includes(app.motion)) return;
+  showOverlay('reconn', `${back.join(', ')} 연결이 끊어졌다 복구되었습니다.\n손잡이를 처음 자세로 놓고 '영점'을 다시 누르세요.`); }
+function showOverlay(id,text){ hideOverlay(id); const d=document.createElement('div'); d.className='overlay-msg'; d.id='ov-'+id; d.textContent=text; $('game-area').appendChild(d); }
+function hideOverlay(id){ const d=$('ov-'+id); if(d) d.remove(); }
+
+async function waitSettled(){
+  // pitch/roll 네 값이 SETTLE_TOL_DEG 이내로 SETTLE_HOLD_SEC 동안 머물면 수렴.
+  // [1007] yaw를 쓰는 게임(1번)은 yaw도 본다: 최근 SETTLE_YAW_WINDOW_SEC 동안 변화가
+  //        SETTLE_YAW_TOL_DEG 이내(랩어라운드 풀어서 비교). 최대 대기 SETTLE_TIMEOUT_YAW_SEC.
+  const needYaw = !YAW_FREE_MOTIONS.includes(app.motion);
+  const t0=performance.now(), deadline=t0+(needYaw?SETTLE_TIMEOUT_YAW_SEC:SETTLE_TIMEOUT_SEC)*1000;
+  let prev=null, holdFrom=null, yawHist=[];
+  const token=app.startToken;
+  while(true){ const L=app.boards[2].latest, Rb=app.boards[1].latest; const now=performance.now();
+    if(token!==app.startToken || !$('scr-game').classList.contains('active')) return {settled:false, waited:(now-t0)/1000, cancelled:true};
+    if(L.connected&&Rb.connected){ const cur=[L.pitch,L.roll,Rb.pitch,Rb.roll];
+      let steady = !!prev && Math.max(...cur.map((c,i)=>Math.abs(c-prev[i])))<=SETTLE_TOL_DEG;
+      if(needYaw){
+        let uL=L.yaw, uR=Rb.yaw;
+        if(yawHist.length){ const [,pl,pr]=yawHist[yawHist.length-1]; uL=pl+wrap180(L.yaw-(((pl%360)+360)%360)); uR=pr+wrap180(Rb.yaw-(((pr%360)+360)%360)); }
+        yawHist.push([now,uL,uR]); while(yawHist.length && now-yawHist[0][0]>SETTLE_YAW_WINDOW_SEC*1000) yawHist.shift();
+        if(now-t0<SETTLE_YAW_WINDOW_SEC*1000 || yawHist.length<5) steady=false;
+        else { const sl=yawHist.map(h=>h[1]), sr=yawHist.map(h=>h[2]);
+          if(Math.max(...sl)-Math.min(...sl)>SETTLE_YAW_TOL_DEG || Math.max(...sr)-Math.min(...sr)>SETTLE_YAW_TOL_DEG) steady=false; }
+      }
+      if(steady){ if(holdFrom==null) holdFrom=now; else if(now-holdFrom>=SETTLE_HOLD_SEC*1000) return {settled:true,waited:(now-t0)/1000}; }
+      else holdFrom=null; prev=cur; } else { prev=null; holdFrom=null; yawHist=[]; }
+    if(now>=deadline) return {settled:false,waited:(now-t0)/1000};
+    await new Promise(r=>setTimeout(r,SETTLE_POLL_MS)); }
+}
+$('btn-start').addEventListener('click', async()=>{
+  const L=app.boards[2], Rb=app.boards[1];
+  if(!(L.connected&&Rb.connected)){ syncStartButton(L.connected,Rb.connected); return; }
+  if(!app.started){
+    if(app.starting) return; app.starting=true;
+    showOverlay('settle', YAW_FREE_MOTIONS.includes(app.motion) ? '초기 자세 확인 중' : '초기 자세 확인 중\n(1분 이상 걸릴 수 있음)');   // 1015 파이썬과 같은 문구
+    const token=app.startToken;
+    const {settled,waited,cancelled}=await waitSettled();
+    hideOverlay('settle'); app.starting=false;
+    if(cancelled || token!==app.startToken || !$('scr-game').classList.contains('active')){ console.log('[영점] 대기 중 화면을 떠나 시작을 취소'); return; }
+    if(!(L.connected&&Rb.connected)){ syncStartButton(L.connected,Rb.connected); return; }
+    console.log(settled? `[영점] 자세 수렴 ${waited.toFixed(2)}초 대기 후 기준 저장` : `[영점] 경고: ${waited.toFixed(2)}초 안에 수렴하지 않아 마지막 값으로 진행`);
+    app.hands[2].qStart=poseQuat(L.yaw,L.pitch,L.roll); app.hands[1].qStart=poseQuat(Rb.yaw,Rb.pitch,Rb.roll);
+    for(const h of [1,2]){ const st=app.hands[h]; st.repPos=st.repNeg=0; st.armedPos=st.armedNeg=st.overPos=st.overNeg=false; }
+    app.started=true; syncStartButton(true,true); requestWake();
+    await startLogging();
+  } else {
+    await stopLogging(); app.started=false; releaseWake();
+    const run=app.run;
+    toast('운동 기록을 저장했습니다.', run?[['엑셀 다운로드',()=>downloadRun(run.id)]]:[], 8000);
+    showSelection();
+  }
+});
+$('btn-back').addEventListener('click', async()=>{ await stopLogging(); app.started=false; showSelection(); });
+function onRezero(){
+  if(!app.started) return; const L=app.boards[2], Rb=app.boards[1]; if(!(L.connected&&Rb.connected)) return;
+  app.hands[2].qStart=poseQuat(L.yaw,L.pitch,L.roll); app.hands[1].qStart=poseQuat(Rb.yaw,Rb.pitch,Rb.roll);
+  for(const h of [1,2]){ const st=app.hands[h]; st.armedPos=st.armedNeg=st.overPos=st.overNeg=false; }
+  hideOverlay('reconn'); const z=$('btn-zero'); if(z){ z.textContent='영점 완료'; setTimeout(()=>{ if(z.isConnected) z.textContent='영점'; },1000); }
+}
+
+// ───────────── 기록(시작~종료) ─────────────
+async function startLogging(){
+  const m=app.motion, uname=app.username||'user';
+  if(!app.run){ app.run={ id:`${safeName(uname)}_${stamp()}`, user:uname, startedAt:Date.now(), sheets:[] }; }
+  const run=app.run, seq=run.sheets.length+1, title=`${seq}_${MOTION_FILE[m]}_LR`.slice(0,31);
+  const [pk,nk]=targetKeys(m); const T=app.targets, C=app.caps;
+  const headers=[
+    [`user=${uname}`, `motion=${MOTION_FILE[m]}`, 'hand=LR(양손)', `start=${nowStr(false)}`, 'source=tablet-BLE', 'board=Rev2(9축)', `fusion=${FUSION_MODE_BY_MOTION[m]}축`],
+    ['angle 부호: + = 굴곡/회내/천측편위, - = 신전/회외/요측편위'],
+    ['connected_L/R: 1=연결됨, 0=연결 끊김(끊긴 동안 해당 손 각도는 마지막 값 유지)'],
+    ['angle_L/R = 화면 표시 각도(최대각도에서 잘림), angle_L/R_raw = 자르지 않은 실제 각도(분석용), yaw/pitch/roll_L/R = 보드가 보낸 원본 자세각. 행은 보드 데이터가 도착할 때마다(양손 합쳐 약 100Hz) 기록'],
+    [`goal_count=${app.goalCount}`, `L_target(+${pk})=${fmtNum(T[2][pk])}`, `L_target(-${nk})=${fmtNum(T[2][nk])}`, `L_max(+${pk})=${fmtNum(C[2][pk])}`, `L_max(-${nk})=${fmtNum(C[2][nk])}`,
+      `R_target(+${pk})=${fmtNum(T[1][pk])}`, `R_target(-${nk})=${fmtNum(T[1][nk])}`, `R_max(+${pk})=${fmtNum(C[1][pk])}`, `R_max(-${nk})=${fmtNum(C[1][nk])}`],
+    ['real_time','elapsed_s','angle_L','angle_R','angle_L_raw','angle_R_raw','connected_L','connected_R','goal_count',
+      `achieved_L_${pk}`,`achieved_L_${nk}`,`achieved_R_${pk}`,`achieved_R_${nk}`,'yaw_L','pitch_L','roll_L','yaw_R','pitch_R','roll_R'],
+  ];
+  run.sheets.push({title, headers, nrows:0, motion:m, startedAt:Date.now()});
+  await DB.putRun(run).catch(e=>console.warn('저장소 오류',e));
+  app.log={active:true, startT:performance.now(), rows:[], sheetIdx:run.sheets.length-1, headers, timer:setInterval(flushLog,AUTOSAVE_MS), latestDisp:{1:0,2:0}};
+}
+async function flushLog(){
+  const lg=app.log; if(!lg.rows.length||!app.run) return; const rows=lg.rows; lg.rows=[];
+  try{ await DB.addChunk(app.run.id,lg.sheetIdx,rows); app.run.sheets[lg.sheetIdx].nrows+=rows.length; await DB.putRun(app.run); }
+  catch(e){ console.warn('기록 저장 실패',e); lg.rows=rows.concat(lg.rows); }
+}
+async function stopLogging(){
+  const lg=app.log; if(!lg.active) return; lg.active=false; clearInterval(lg.timer);
+  await flushLog(); if(app.run) await DB.putRun(app.run).catch(()=>{});
+}
+async function downloadRun(runId){
+  const run=await DB.getRun(runId); if(!run){ toast('기록을 찾을 수 없습니다.'); return; }
+  toast('엑셀 파일을 만드는 중…',[],0);
+  try{ const sheets=[]; for(let i=0;i<run.sheets.length;i++){ const s=run.sheets[i]; const rows=await DB.sheetRows(run.id,i); sheets.push({title:s.title, rows:[...s.headers, ...rows]}); }
+    if(!sheets.length) sheets.push({title:'empty',rows:[['기록 없음']]});
+    const blob=await XLSX.build(sheets); const fname=`${run.id}.xlsx`;
+    const file=new File([blob],fname,{type:blob.type});
+    if(navigator.canShare && navigator.canShare({files:[file]}) && /Android/i.test(navigator.userAgent)){
+      toast('다운로드 또는 공유를 선택하세요.',[['다운로드',()=>saveBlob(blob,fname)],['공유(카톡·메일 등)',()=>navigator.share({files:[file],title:fname}).catch(()=>{})]],15000);
+    } else { saveBlob(blob,fname); toast(`${fname} 다운로드를 시작했습니다.`); }
+  }catch(e){ console.error(e); toast('엑셀 생성 실패: '+(e.message||e),[],8000); }
+}
+function saveBlob(blob,fname){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },4000); }
+async function openRecords(){
+  showScreen('scr-records'); const list=$('rec-list'); list.innerHTML='<div class="hint">불러오는 중…</div>';
+  const runs=await DB.listRuns().catch(()=>[]); list.innerHTML='';
+  if(!runs.length){ list.innerHTML='<div class="hint">저장된 기록이 없습니다.</div>'; return; }
+  for(const r of runs){ const d=document.createElement('div'); d.className='rec'; const dt=new Date(r.startedAt);
+    const total=r.sheets.reduce((a,s)=>a+(s.nrows||0),0);
+    d.innerHTML=`<div class="meta"><b>${r.user}</b><span>${dt.toLocaleString('ko-KR')} · 운동 ${r.sheets.length}회 · ${total.toLocaleString()}행 · ${r.id}.xlsx</span><span>${r.sheets.map(s=>s.title).join(', ')}</span></div>`;
+    const b1=document.createElement('button'); b1.className='primary'; b1.textContent='엑셀 다운로드'; b1.onclick=()=>downloadRun(r.id);
+    const b2=document.createElement('button'); b2.className='danger'; b2.textContent='삭제'; b2.onclick=async()=>{ if(await confirmBox('기록 삭제',`${r.user} (${dt.toLocaleString('ko-KR')}) 기록을 지웁니다. 되돌릴 수 없습니다.`)){ await DB.deleteRun(r.id); if(app.run&&app.run.id===r.id) app.run=null; openRecords(); } };
+    d.appendChild(b1); d.appendChild(b2); list.appendChild(d); }
+}
+$('btn-records-back').addEventListener('click', ()=>{ showScreen(app.username ? 'scr-select' : 'scr-connect'); });
+
+// ───────────── 화면 꺼짐 방지 ─────────────
+async function requestWake(){ try{ if('wakeLock' in navigator) app.wakeLock=await navigator.wakeLock.request('screen'); }catch(e){} }
+function releaseWake(){ try{ if(app.wakeLock){ app.wakeLock.release(); app.wakeLock=null; } }catch(e){} }
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && app.started) requestWake(); });
+window.addEventListener('beforeunload', ()=>{ if(app.log.active){ /* 마지막 묶음은 다음 자동저장 전이면 유실될 수 있음 */ } });
+
+// ───────────── 시작 ─────────────
+(async function init(){
+  // 연결 상태 알약을 이름/선택 화면 상단에도 표시
+  for(const [holder,prefix] of [['name-conns','name-conn-'],['select-conns','select-conn-']]) for(const h of [2,1]){ const s=document.createElement('span'); s.className='pill off'; s.id=prefix+h; s.innerHTML=`<span class="dot"></span>${h===2?'왼손':'오른손'}`; $(holder).appendChild(s); }
+  if(SIM){ $('sim-badge').hidden=false; }
+  else if(!navigator.bluetooth){
+    $('unsupported').hidden=false;
+    $('unsupported').innerHTML = `이 브라우저에서는 블루투스(Web Bluetooth)를 쓸 수 없습니다.<br>
+      · 갤럭시탭에서는 <b>Chrome</b> 브라우저로 여세요(삼성 인터넷은 설정에서 Web Bluetooth를 켜야 함).<br>
+      · 주소가 <code>https://</code> 또는 <code>http://localhost</code> 로 시작해야 합니다. (현재: <code>${location.protocol}//${location.host||'(파일)'}</code>, 보안 컨텍스트: ${window.isSecureContext})<br>
+      · 화면만 미리 보려면 주소 끝에 <code>?sim=1</code> 을 붙여 시뮬레이션으로 열 수 있습니다.`;
+  }
+  await loadImages();
+  tryAutoReconnect();
+  if('serviceWorker' in navigator && location.protocol.startsWith('http')){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+})();
+</script>
+</body>
+</html>

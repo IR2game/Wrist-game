@@ -1,0 +1,13 @@
+{
+  "name": "손목 회전 게임",
+  "short_name": "손목게임",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "lang": "ko",
+  "icons": [
+    { "src": "img/Flexion_dir.png", "sizes": "260x260", "type": "image/png" }
+  ]
+}
