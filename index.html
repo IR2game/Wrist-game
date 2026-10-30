@@ -37,11 +37,12 @@ button:focus-visible{outline:3px solid #1f4e79;outline-offset:2px}
   padding-block:max(10px,env(safe-area-inset-top,0px)) max(10px,env(safe-area-inset-bottom,0px))}
 .screen.active{display:flex}
 .title-pill{display:inline-block;background:var(--label-bg);color:var(--label-fg);border-radius:14px;padding:12px 28px;font-size:28px;font-weight:700}
-.center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;flex:1;min-height:0}
+.center{display:flex;flex-direction:column;align-items:center;justify-content:safe center;gap:22px;flex:1;min-height:0;overflow:auto;padding-block:12px}
 .row{display:flex;gap:16px;align-items:center;flex-wrap:wrap;justify-content:center}
 .hint{color:var(--muted);font-size:17px;text-align:center;line-height:1.5}
 .status{color:var(--warn);font-size:22px;text-align:center;min-height:1.4em}
-.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.topbar{display:flex;align-items:center;justify-content:center;gap:12px;position:relative;min-height:60px}
+.topbar > :not(.title-pill){position:absolute;right:0;top:50%;transform:translateY(-50%)}
 .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;background:var(--panel);font-size:16px;border:1px solid var(--line)}
 .pill .dot{width:12px;height:12px;border-radius:50%;background:#bbb}
 .pill.on .dot{background:var(--ok)}
@@ -51,8 +52,9 @@ button:focus-visible{outline:3px solid #1f4e79;outline-offset:2px}
 .cards{display:flex;gap:24px;justify-content:center;flex-wrap:wrap}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 24px;min-width:300px;max-width:420px;flex:1 1 300px;display:flex;flex-direction:column;gap:12px}
 .card h3{margin:0;font-size:26px}
-.card .dev{font-size:16px;color:var(--muted);min-height:1.3em;word-break:break-all}
+.card .dev{font-size:16px;color:var(--muted);min-height:4.2em;word-break:break-all}   /* 보드 상태 3줄 분량 미리 확보 */
 .card .ypr{font-variant-numeric:tabular-nums;font-size:16px;color:var(--muted);min-height:1.3em}
+.card .hint{min-height:1.6em}
 .card .conn{font-size:20px;font-weight:700}
 .card .conn.on{color:var(--ok)} .card .conn.off{color:var(--warn)}
 
