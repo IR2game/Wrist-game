@@ -114,7 +114,6 @@ code{background:#eee;padding:1px 5px;border-radius:4px}
 <section id="scr-connect" class="screen active">
   <div class="topbar">
     <span class="title-pill" id="app-title">손목 회전 게임 · 보드 연결</span>
-    <span class="pill" id="sim-badge" hidden><span class="dot" style="background:#e0a000"></span>시뮬레이션 모드</span>
   </div>
   <div class="center">
     <div id="unsupported" class="unsupported" hidden></div>
@@ -144,17 +143,16 @@ code{background:#eee;padding:1px 5px;border-radius:4px}
     </div>
     <div class="status" id="connect-status"></div>
     <div class="row">
-      <button class="accent" id="btn-to-name" style="font-size:26px;padding:14px 40px">다음 (이름 입력)</button>
-      <button id="btn-records-0">기록 보기</button>
+      <button class="accent" id="btn-to-name" style="font-size:26px;padding:14px 48px">다음</button>
     </div>
     <div class="hint">보드 전원을 켜고 손잡이를 2초간 가만히 둔 뒤(부팅 보정) '연결'을 누르세요.<br>
-      목록에서 <b>WristIMU-L</b>(왼손) / <b>WristIMU-R</b>(오른손)을 고르면 됩니다. 보드가 칩 고유번호로 자기 손을 스스로 알립니다.</div>
+      목록에서 <b>WristIMU-L</b>(왼손) / <b>WristIMU-R</b>(오른손)을 고르면 됩니다.</div>
   </div>
 </section>
 
 <!-- ───────── 2. 이름 입력 ───────── -->
 <section id="scr-name" class="screen">
-  <div class="topbar"><span class="title-pill">사용자 이름 입력</span><span id="name-conns" class="row"></span></div>
+  <div class="topbar"><span class="title-pill">사용자 이름 입력</span></div>
   <div class="center">
     <div class="hint" style="font-size:19px">이름을 입력하고 '확인'을 누르세요.<br>'각도 설정'에서 왼손/오른손 각 운동의 최대/목표 각도를 변경할 수 있습니다.</div>
     <input class="name" id="inp-name" placeholder="이름" autocomplete="off">
@@ -171,13 +169,12 @@ code{background:#eee;padding:1px 5px;border-radius:4px}
 <section id="scr-select" class="screen">
   <div class="topbar">
     <span class="title-pill">게임 선택</span>
-    <span class="row" id="select-conns"></span>
   </div>
   <div class="center" style="flex-direction:row;gap:40px;align-items:center">
     <div style="display:flex;flex-direction:column;gap:14px;align-items:center">
-      <button class="accent" id="btn-change-user" style="font-size:24px;padding:16px 28px">사용자 변경</button>
+      <button class="accent" id="btn-change-user" style="font-size:24px;padding:16px 28px;width:240px">사용자 변경</button>
       <div class="hint" id="select-user"></div>
-      <button id="btn-records-1" style="font-size:18px">기록 보기</button>
+      <button class="accent" id="btn-records-1" style="font-size:24px;padding:16px 28px;width:240px">기록 보기</button>
     </div>
     <div class="sel-grid">
       <img src="img/FE.png" alt=""><button id="btn-m1">굴곡 (Flexion) /<br>신전 (Extension)</button>
@@ -193,10 +190,6 @@ code{background:#eee;padding:1px 5px;border-radius:4px}
   <div id="game-top">
     <button id="btn-start">시작</button>
     <button id="btn-back">돌아가기</button>
-    <div class="conns">
-      <span class="pill off" id="gconn-2"><span class="dot"></span>왼손</span>
-      <span class="pill off" id="gconn-1"><span class="dot"></span>오른손</span>
-    </div>
   </div>
   <div id="game-area"></div>
 </section>
@@ -423,6 +416,12 @@ class Board {
       try{ await this._open(); }catch(e){ this._scheduleRetry(); } }, 1500); }
   async sendCmd(ch){ try{ if(this.cmdChar && this.linkUp) await this.cmdChar.writeValueWithoutResponse(new Uint8Array([ch.charCodeAt(0)])); }catch(e){ try{ await this.cmdChar.writeValue(new Uint8Array([ch.charCodeAt(0)])); }catch(e2){} } }
   requestCalibration(){ return this.sendCmd('C'); }
+  async readStatus(){ try{ if(this.statusChar){ const v=await this.statusChar.readValue(); this._parseStatus(new TextDecoder().decode(v)); } }catch(e){} }
+  // 융합 모드('9'/'6') 전환: 보낸 뒤 보드 상태를 다시 읽어 실제로 바뀌었는지 확인한다.
+  // 안 바뀌었으면 최대 3회 재전송. 끝까지 안 되면 false(호출한 쪽이 경고 표시).
+  async setMode(ch){ const want = ch==='9' ? 9 : 6;
+    for(let i=0;i<3;i++){ await this.sendCmd(ch); await new Promise(r=>setTimeout(r,400)); await this.readStatus(); if(this.mode===want) return true; }
+    return this.mode===want; }
   detach(forget=true){ this.wantConnected=false; clearTimeout(this.retryTimer);
     try{ if(this.device && this.device.gatt.connected) this.device.gatt.disconnect(); }catch(e){}
     this.linkUp=false; this.device=null; this.server=null; this.imuChar=null; this.cmdChar=null; this.statusChar=null; this.boardHand='?';
@@ -444,7 +443,8 @@ class SimBoard extends Board {
       this.lastT=performance.now(); if(this.onSample) this.onSample(this); }, 20);
     this._emit(); }
   _simStatus(){ this.statusText=`hand=${this.boardHand};mode=${this.mode};mag=${this.magOK?1:0};B=74.6;rate=99.8;bias=1;map=4;ver=sim`; }
-  async sendCmd(ch){ if(ch==='9'){ this.mode=9; this.magOK=true; } else if(ch==='6'){ this.mode=6; this.magOK=false; } this._simStatus(); this._emit(); }
+  async sendCmd(ch){ if(window.__simModeFail===this.hand && (ch==='9'||ch==='6')) return;   // 시험용: 전환 실패 흉내
+    if(ch==='9'){ this.mode=9; this.magOK=true; } else if(ch==='6'){ this.mode=6; this.magOK=false; } this._simStatus(); this._emit(); }
   detach(forget=true){ clearInterval(this.timer); super.detach(forget); }
 }
 
@@ -555,7 +555,6 @@ function confirmBox(title,msg){ return new Promise(res=>{ $('confirm-title').tex
   $('btn-confirm-ok').onclick=()=>{ $('modal-confirm').classList.remove('open'); res(true); }; $('btn-confirm-cancel').onclick=()=>{ $('modal-confirm').classList.remove('open'); res(false); }; }); }
 
 // ───────────── 연결 화면 ─────────────
-function connPill(el, on, text){ el.classList.toggle('on',on); el.classList.toggle('off',!on); if(text) el.lastChild.textContent=text; }
 function renderBoard(b){
   const h=b.hand, on=b.connected;
   const c=$('conn-'+h); c.textContent = b.linkUp ? (on?'연결됨':'연결됨 (데이터 대기 중…)') : (b.device? '끊김 - 재연결 시도 중…' : '연결 안 됨'); c.className='conn '+(on?'on':'off');
@@ -572,8 +571,6 @@ function renderBoard(b){
   }
   else if(!b.linkUp && !b.device && !hint.textContent.includes('보드입니다')) { hint.textContent=''; hint.style.color=''; }
   else if(b.linkUp){ hint.textContent=''; hint.style.color=''; }
-  const modeTag = b.modeText ? ' '+b.modeText.split('(')[0] : '';
-  connPill($('gconn-'+h), on, b.label+modeTag); connPill($('name-conn-'+h)||document.createElement('span'), on); connPill($('select-conn-'+h)||document.createElement('span'), on);
   $('connect-status').textContent = (app.boards[1].connected && app.boards[2].connected) ? '양손 보드가 모두 연결되었습니다.' : '';
 }
 for(const h of [1,2]){
@@ -604,7 +601,6 @@ setInterval(()=>{ for(const h of [1,2]){ const b=app.boards[h]; if(b.linkUp){ co
 
 $('btn-to-name').addEventListener('click', ()=>{ showScreen('scr-name'); $('inp-name').value=app.username||''; setTimeout(()=>$('inp-name').focus(),50); });
 $('btn-back-connect').addEventListener('click', ()=>showScreen('scr-connect'));
-$('btn-records-0').addEventListener('click', openRecords);
 $('btn-records-1').addEventListener('click', openRecords);
 
 // ───────────── 사용자/설정 ─────────────
@@ -721,7 +717,11 @@ function showGame(m){
   if(REZERO_BUTTON_MOTIONS.includes(m)){ const z=document.createElement('button'); z.id='btn-zero'; z.textContent='영점'; z.addEventListener('click',onRezero); area.appendChild(z); }
   layoutGame(); refreshCountBoxes(); updateDefaultView();
   // [0930] 게임에 맞는 융합 모드(1번=9축, 2·3번=6축)를 먼저 지정하고 바이어스 재보정을 요청한다.
-  for(const h of [1,2]){ const b=app.boards[h]; (async()=>{ await b.sendCmd(FUSION_MODE_BY_MOTION[m]||'6'); await b.requestCalibration(); })(); }
+  app.modeFail={};
+  for(const h of [1,2]){ const b=app.boards[h]; (async()=>{
+    const ok=await b.setMode(FUSION_MODE_BY_MOTION[m]||'6'); await b.requestCalibration();
+    if(app.motion!==m || !$('scr-game').classList.contains('active')) return;   // 그 사이 화면을 떠났으면 무시
+    if(!ok && b.linkUp){ app.modeFail[h]=true; updateModeWarning(); } })(); }
   app.prevConn={1:true,2:true};
   startGameLoop();
 }
@@ -792,7 +792,7 @@ function stopGameLoop(){ cancelAnimationFrame(app.raf); app.raf=0; releaseWake()
 function syncStartButton(cL,cR){ const b=$('btn-start'); b.textContent = (!cL&&!cR)?'연결 안 됨(양손)' : !cL?'연결 안 됨(왼손)' : !cR?'연결 안 됨(오른손)' : (app.started?'종료':'시작'); }
 function gameFrame(){
   const L=app.boards[2], Rb=app.boards[1], cL=L.connected, cR=Rb.connected;
-  syncStartButton(cL,cR); connPill($('gconn-2'),cL); connPill($('gconn-1'),cR);
+  syncStartButton(cL,cR);
   checkReconnect(cL,cR);
   if(!app.started) return;
   for(const [hand,b,c] of [[2,L,cL],[1,Rb,cR]]){ if(!c) continue; const st=app.hands[hand];
@@ -805,6 +805,9 @@ function checkReconnect(cL,cR){ const now={2:cL,1:cR}; const back=[];
   showOverlay('reconn', `${back.join(', ')} 연결이 끊어졌다 복구되었습니다.\n손잡이를 처음 자세로 놓고 '영점'을 다시 누르세요.`); }
 function showOverlay(id,text){ hideOverlay(id); const d=document.createElement('div'); d.className='overlay-msg'; d.id='ov-'+id; d.textContent=text; $('game-area').appendChild(d); }
 function hideOverlay(id){ const d=$('ov-'+id); if(d) d.remove(); }
+// 모드 전환 실패 경고(실패한 손이 있을 때만 화면 중앙에 표시)
+function updateModeWarning(){ hideOverlay('mode'); const names=[2,1].filter(h=>app.modeFail&&app.modeFail[h]).map(h=>h===2?'왼손':'오른손'); if(!names.length) return;
+  showOverlay('mode', `${names.join(', ')} 보드의 모드 전환(${FUSION_MODE_BY_MOTION[app.motion]}축)에 실패했습니다.\n'돌아가기'를 누른 뒤 게임에 다시 들어오세요.`); }
 
 async function waitSettled(){
   // pitch/roll 네 값이 SETTLE_TOL_DEG 이내로 SETTLE_HOLD_SEC 동안 머물면 수렴.
@@ -925,9 +928,7 @@ window.addEventListener('beforeunload', ()=>{ if(app.log.active){ /* 마지막 �
 
 // ───────────── 시작 ─────────────
 (async function init(){
-  // 연결 상태 알약을 이름/선택 화면 상단에도 표시
-  for(const [holder,prefix] of [['name-conns','name-conn-'],['select-conns','select-conn-']]) for(const h of [2,1]){ const s=document.createElement('span'); s.className='pill off'; s.id=prefix+h; s.innerHTML=`<span class="dot"></span>${h===2?'왼손':'오른손'}`; $(holder).appendChild(s); }
-  if(SIM){ $('sim-badge').hidden=false; }
+  if(SIM){ console.log('시뮬레이션 모드(?sim=1): 가짜 보드 사용'); }
   else if(!navigator.bluetooth){
     $('unsupported').hidden=false;
     $('unsupported').innerHTML = `이 브라우저에서는 블루투스(Web Bluetooth)를 쓸 수 없습니다.<br>
