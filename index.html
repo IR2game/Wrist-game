@@ -512,24 +512,37 @@ const XLSX = (()=>{
 // ───────────── 기록 저장소(IndexedDB): run(사용자별 파일) → sheet(게임) → chunk(행 묶음) ─────────────
 const DB = (()=>{
   let dbp=null;
-  function open(){ if(dbp) return dbp; dbp=new Promise((res,rej)=>{ const r=indexedDB.open('wristgame',1);
+  // 저장소 연결. 브라우저가 연결을 끊으면(onclose) 표시를 지워 두었다가 다음에 쓸 때 새로 연다.
+  function open(){ if(dbp) return dbp; const p=new Promise((res,rej)=>{ const r=indexedDB.open('wristgame',1); let late=false;
+    const tm=setTimeout(()=>{ late=true; if(dbp===p) dbp=null; rej(new Error('저장소 열기 시간 초과')); },5000);
     r.onupgradeneeded=()=>{ const d=r.result; d.createObjectStore('runs',{keyPath:'id'}); const c=d.createObjectStore('chunks',{keyPath:'id',autoIncrement:true}); c.createIndex('run','runId'); c.createIndex('sheet',['runId','sheetIdx']); };
-    r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); return dbp; }
+    r.onsuccess=()=>{ clearTimeout(tm); const d=r.result; if(late){ try{ d.close(); }catch(e){} return; }
+      d.onclose=()=>{ if(dbp===p) dbp=null; };
+      d.onversionchange=()=>{ try{ d.close(); }catch(e){} if(dbp===p) dbp=null; };
+      res(d); };
+    r.onerror=()=>{ clearTimeout(tm); if(dbp===p) dbp=null; rej(r.error); }; });
+    dbp=p; return p; }
+  function reset(){ const p=dbp; dbp=null; if(p) p.then(d=>{ try{ d.close(); }catch(e){} },()=>{}); }
+  // 저장소 작업 실행. 실패하면(연결이 끊긴 경우 등) 연결을 새로 열어 한 번 더 시도한다.
+  async function exec(fn){ try{ return await fn(await open()); }
+    catch(e){ console.warn('저장소 작업 실패 → 연결을 새로 열어 다시 시도:', e); reset(); return await fn(await open()); } }
   const tx=(d,st,mode)=>d.transaction(st,mode).objectStore(st);
   const req=r=>new Promise((res,rej)=>{ r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+  // 쓰기는 '완전히 기록됨(oncomplete)'까지 기다린다. 실패는 아무것도 기록되지 않았다는 뜻이므로 다시 시도해도 중복되지 않는다.
+  const done=t=>new Promise((res,rej)=>{ t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error||new Error('저장이 취소됨')); });
   return {
-    async putRun(run){ const d=await open(); return req(tx(d,'runs','readwrite').put(run)); },
-    async getRun(id){ const d=await open(); return req(tx(d,'runs').get(id)); },
-    async listRuns(){ const d=await open(); const all=await req(tx(d,'runs').getAll()); return all.sort((a,b)=>b.startedAt-a.startedAt); },
-    async addChunk(runId,sheetIdx,rows){ const d=await open(); return req(tx(d,'chunks','readwrite').add({runId,sheetIdx,rows,t:Date.now()})); },
-    async sheetRows(runId,sheetIdx){ const d=await open(); const idx=tx(d,'chunks').index('sheet'); const chunks=await req(idx.getAll(IDBKeyRange.only([runId,sheetIdx]))); chunks.sort((a,b)=>a.id-b.id); const out=[]; for(const c of chunks) for(const r of c.rows) out.push(r); return out; },
+    putRun(run){ return exec(d=>{ const t=d.transaction('runs','readwrite'); t.objectStore('runs').put(run); return done(t); }); },
+    getRun(id){ return exec(d=>req(tx(d,'runs').get(id))); },
+    async listRuns(){ const all=await exec(d=>req(tx(d,'runs').getAll())); return all.sort((a,b)=>b.startedAt-a.startedAt); },
+    addChunk(runId,sheetIdx,rows){ return exec(d=>{ const t=d.transaction('chunks','readwrite'); t.objectStore('chunks').add({runId,sheetIdx,rows,t:Date.now()}); return done(t); }); },
+    sheetRows(runId,sheetIdx){ return exec(async d=>{ const idx=tx(d,'chunks').index('sheet'); const chunks=await req(idx.getAll(IDBKeyRange.only([runId,sheetIdx]))); chunks.sort((a,b)=>a.id-b.id); const out=[]; for(const c of chunks) for(const r of c.rows) out.push(r); return out; }); },
     // 한 운동(시트)의 마지막 행에 적힌 경과 시간(초). 마지막 묶음만 읽는다.
-    async lastElapsed(runId,sheetIdx){ const d=await open(); const idx=tx(d,'chunks').index('sheet');
+    lastElapsed(runId,sheetIdx){ return exec(d=>{ const idx=tx(d,'chunks').index('sheet');
       return new Promise((res,rej)=>{ const r=idx.openCursor(IDBKeyRange.only([runId,sheetIdx]),'prev');
-        r.onsuccess=()=>{ const c=r.result; const rows=c?c.value.rows:null; res(rows&&rows.length ? (+rows[rows.length-1][1]||0) : 0); }; r.onerror=()=>rej(r.error); }); },
-    async deleteRun(runId){ const d=await open(); const t=d.transaction(['runs','chunks'],'readwrite'); t.objectStore('runs').delete(runId);
+        r.onsuccess=()=>{ const c=r.result; const rows=c?c.value.rows:null; res(rows&&rows.length ? (+rows[rows.length-1][1]||0) : 0); }; r.onerror=()=>rej(r.error); }); }); },
+    deleteRun(runId){ return exec(async d=>{ const t=d.transaction(['runs','chunks'],'readwrite'); t.objectStore('runs').delete(runId);
       const idx=t.objectStore('chunks').index('run'); const keys=await req(idx.getAllKeys(IDBKeyRange.only(runId))); for(const k of keys) t.objectStore('chunks').delete(k);
-      return new Promise((res,rej)=>{ t.oncomplete=res; t.onerror=()=>rej(t.error); }); },
+      return new Promise((res,rej)=>{ t.oncomplete=res; t.onerror=()=>rej(t.error); }); }); },
   };
 })();
 
@@ -857,11 +870,12 @@ $('btn-start').addEventListener('click', async()=>{
   } else {
     await stopLogging(); app.started=false; releaseWake();
     const run=app.run;
-    toast('운동 기록을 저장했습니다.', run?[['엑셀 다운로드',()=>downloadRun(run.id)]]:[], 8000);
+    if(saveQ.length) showSaveState();   // 저장하지 못한 부분이 있으면 실패 알림(자동으로 다시 저장)
+    else toast('운동 기록을 저장했습니다.', run?[['엑셀 다운로드',()=>downloadRun(run.id)]]:[], 8000);
     showSelection();
   }
 });
-$('btn-back').addEventListener('click', async()=>{ await stopLogging(); app.started=false; showSelection(); });
+$('btn-back').addEventListener('click', async()=>{ await stopLogging(); app.started=false; if(saveQ.length) showSaveState(); showSelection(); });
 function onRezero(){
   if(!app.started) return; const L=app.boards[2], Rb=app.boards[1]; if(!(L.connected&&Rb.connected)) return;
   app.hands[2].qStart=poseQuat(L.yaw,L.pitch,L.roll); app.hands[1].qStart=poseQuat(Rb.yaw,Rb.pitch,Rb.roll);
@@ -886,22 +900,51 @@ async function startLogging(){
       `achieved_L_${pk}`,`achieved_L_${nk}`,`achieved_R_${pk}`,`achieved_R_${nk}`,'yaw_L','pitch_L','roll_L','yaw_R','pitch_R','roll_R'],
   ];
   run.sheets.push({title, headers, nrows:0, motion:m, startedAt:Date.now()});
-  await DB.putRun(run).catch(e=>console.warn('저장소 오류',e));
+  saveQ.push({run, rows:[], chunkDone:true}); drainSaveQ();   // 기록 등록(실패하면 대기열에 남아 다시 시도)
   app.log={active:true, startT:performance.now(), rows:[], sheetIdx:run.sheets.length-1, headers, timer:setInterval(flushLog,AUTOSAVE_MS), latestDisp:{1:0,2:0}};
 }
+// ── 저장 대기열 ──
+// 저장할 묶음을 순서대로 넣고 하나씩 저장한다. 실패한 묶음은 지우지 않고 남겨 두었다가
+// 5초마다 다시 시도하므로, 저장소 연결이 끊겼다가 다시 열리면 밀린 부분이 모두 저장된다.
+const saveQ = [];                 // {run, sheetIdx, rows, chunkDone}
+let saveChain = Promise.resolve(), saveRetryTimer = null;
+async function _drainSaveQ(){
+  try{
+    while(saveQ.length){ const u=saveQ[0];
+      if(!u.chunkDone){ await DB.addChunk(u.run.id,u.sheetIdx,u.rows); u.chunkDone=true;   // 같은 묶음을 두 번 쓰지 않도록 표시
+        const sh=u.run.sheets[u.sheetIdx]; sh.nrows+=u.rows.length; sh.durSec=u.rows[u.rows.length-1][1]; }
+      if(saveQ.indexOf(u)<0) continue;                      // 그 사이 사용자가 이 기록을 삭제함
+      await DB.putRun(u.run);
+      const i=saveQ.indexOf(u); if(i>=0) saveQ.splice(i,1); }
+  }catch(e){ console.warn('기록 저장 실패 → 남겨 두고 다시 시도합니다:', e); }
+  if(saveQ.length){ if(!saveRetryTimer) saveRetryTimer=setInterval(drainSaveQ, AUTOSAVE_MS); }
+  else if(saveRetryTimer){ clearInterval(saveRetryTimer); saveRetryTimer=null; }
+  showSaveState();
+  return saveQ.length===0;
+}
+// 저장 실패 알림. 저장하지 못한 부분이 있으면 저장될 때까지 계속 띄워 두고(운동 중에는 새로 띄우지 않음),
+// 모두 저장되면 저장됐다고 알린다.
+let saveWarned = false;
+function showSaveState(){
+  if(saveQ.length){ if(!app.started){ saveWarned=true; toast('운동 기록을 저장하지 못했습니다. 다시 저장하고 있습니다. 앱을 닫지 마세요.',[],0); } }
+  else if(saveWarned){ saveWarned=false; toast('저장하지 못했던 운동 기록을 모두 저장했습니다.',[],8000); }
+}
+function drainSaveQ(){ saveChain=saveChain.then(_drainSaveQ); return saveChain; }
+function dropUnsaved(runId){ for(let i=saveQ.length-1;i>=0;i--) if(saveQ[i].run.id===runId) saveQ.splice(i,1); }
+const within=(p,ms)=>Promise.race([p,new Promise(r=>setTimeout(r,ms))]);   // 저장이 늦어져도 화면이 멈추지 않게 기다리는 시간 제한
 async function flushLog(){
-  const lg=app.log; if(!lg.rows.length||!app.run) return; const rows=lg.rows; lg.rows=[];
-  try{ await DB.addChunk(app.run.id,lg.sheetIdx,rows); const sh=app.run.sheets[lg.sheetIdx]; sh.nrows+=rows.length; sh.durSec=rows[rows.length-1][1]; await DB.putRun(app.run); }
-  catch(e){ console.warn('기록 저장 실패',e); lg.rows=rows.concat(lg.rows); }
+  const lg=app.log; if(lg.rows.length && app.run){ saveQ.push({run:app.run, sheetIdx:lg.sheetIdx, rows:lg.rows, chunkDone:false}); lg.rows=[]; }
+  return drainSaveQ();
 }
 async function stopLogging(){
   const lg=app.log; if(!lg.active) return; lg.active=false; clearInterval(lg.timer);
-  await flushLog(); if(app.run) await DB.putRun(app.run).catch(()=>{});
+  await within(flushLog(),3000);
 }
 // 예전 기록에 남아 있는 LR 표시를 뺀다(지금은 항상 양손 측정이라 표시하지 않음)
 const noLR = t => String(t).replace(/_LR$/,'');
 const noLRCell = c => c==='hand=LR(양손)' ? 'hand=양손' : c;
 async function downloadRun(runId){
+  await within(drainSaveQ(),3000);
   const run=await DB.getRun(runId); if(!run){ toast('기록을 찾을 수 없습니다.'); return; }
   toast('엑셀 파일을 만드는 중…',[],0);
   try{ const sheets=[]; for(let i=0;i<run.sheets.length;i++){ const s=run.sheets[i]; const rows=await DB.sheetRows(run.id,i); sheets.push({title:noLR(s.title), rows:[...s.headers.map(h=>h.map(noLRCell)), ...rows]}); }
@@ -916,6 +959,7 @@ async function downloadRun(runId){
 function saveBlob(blob,fname){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },4000); }
 async function openRecords(){
   showScreen('scr-records'); const list=$('rec-list'); list.innerHTML='<div class="hint" style="font-size:22px">불러오는 중…</div>';
+  await within(drainSaveQ(),3000);   // 밀린 저장이 있으면 먼저 저장
   const runs=await DB.listRuns().catch(()=>[]);
   // 운동 시간이 저장돼 있지 않은 예전 기록은 마지막 행의 경과 시간을 한 번 읽어 채워 둔다
   for(const r of runs){ let fix=false;
@@ -927,7 +971,7 @@ async function openRecords(){
     const sec=r.sheets.reduce((a,s)=>a+(s.durSec||0),0), mins=Math.floor(sec/60+0.5);   // 30초 이상 올림, 30초 미만 내림
     d.innerHTML=`<div class="meta"><b>${r.user}</b><span>${dt.toLocaleString('ko-KR')} · 운동 ${r.sheets.length}회 · ${mins}분 · ${r.id}.xlsx</span><span>${r.sheets.map(s=>noLR(s.title)).join(', ')}</span></div>`;
     const b1=document.createElement('button'); b1.className='primary'; b1.textContent='엑셀 다운로드'; b1.onclick=()=>downloadRun(r.id);
-    const b2=document.createElement('button'); b2.className='danger'; b2.textContent='삭제'; b2.onclick=async()=>{ if(await confirmBox('기록 삭제',`${r.user} (${dt.toLocaleString('ko-KR')}) 기록을 지웁니다. 되돌릴 수 없습니다.`)){ await DB.deleteRun(r.id); if(app.run&&app.run.id===r.id) app.run=null; openRecords(); } };
+    const b2=document.createElement('button'); b2.className='danger'; b2.textContent='삭제'; b2.onclick=async()=>{ if(await confirmBox('기록 삭제',`${r.user} (${dt.toLocaleString('ko-KR')}) 기록을 지웁니다. 되돌릴 수 없습니다.`)){ dropUnsaved(r.id); await DB.deleteRun(r.id); if(app.run&&app.run.id===r.id) app.run=null; openRecords(); } };
     d.appendChild(b1); d.appendChild(b2); list.appendChild(d); }
 }
 $('btn-records-back').addEventListener('click', ()=>{ showScreen(app.username ? 'scr-select' : 'scr-connect'); });
